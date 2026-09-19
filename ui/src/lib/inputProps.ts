@@ -22,6 +22,17 @@ export const fieldProps = {
   },
 } as const;
 
+// Compact switch: fixed 12px round thumb in a 32x16 track. Overrides
+// HeroUI's pressed-state thumb stretch, which squeezes at this size.
+export const switchClassNames = {
+  wrapper: "h-4 w-8 mr-0 px-0.5",
+  thumb:
+    "h-3 w-3 rounded-full shadow-none " +
+    "group-data-[pressed=true]:w-3 " +
+    "group-data-[selected=true]:ms-4 " +
+    "group-data-[selected=true]:group-data-[pressed=true]:ms-4",
+} as const;
+
 export function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }

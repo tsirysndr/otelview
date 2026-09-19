@@ -18,7 +18,7 @@ import {
   railVisibleAtom,
   themeAtom,
 } from "../state/atoms";
-import { isMac, isTauri } from "../lib/inputProps";
+import { isMac, isTauri, switchClassNames } from "../lib/inputProps";
 import { TimeRangePicker } from "./TimeRangePicker";
 
 export function TopBar() {
@@ -59,10 +59,7 @@ export function TopBar() {
             isSelected={live}
             onValueChange={setLive}
             aria-label="Live"
-            classNames={{
-              wrapper: "h-4 w-8 mr-0",
-              thumb: "h-3 w-3 group-data-[selected=true]:ms-4",
-            }}
+            classNames={switchClassNames}
           />
           <span className={`text-xs ${live ? "text-neon-green" : "text-default-500"}`}>
             live

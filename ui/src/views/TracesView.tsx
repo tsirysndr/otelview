@@ -8,7 +8,7 @@ import {
   selectedSpanIdAtom,
   traceFiltersAtom,
 } from "../state/atoms";
-import { fieldProps, plainTextField } from "../lib/inputProps";
+import { fieldProps, plainTextField, switchClassNames } from "../lib/inputProps";
 import { useTimeParams } from "../hooks/useTimeParams";
 import { api } from "../lib/api";
 import { fmtAgo, fmtDuration } from "../lib/format";
@@ -109,6 +109,7 @@ function TraceList() {
             isSelected={filters.errorsOnly}
             onValueChange={(errorsOnly) => setFilters({ ...filters, errorsOnly })}
             aria-label="Errors only"
+            classNames={switchClassNames}
           />
           <span className="text-xs text-default-500">errors only</span>
         </div>
