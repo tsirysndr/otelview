@@ -3,6 +3,14 @@ name: release
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to build and upload to (e.g. v0.1.0)"
+        required: true
+
+env:
+  RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
 
 permissions:
   contents: write
@@ -48,7 +56,7 @@ jobs:
 
       - name: Package
         run: |
-          TAG="${GITHUB_REF_NAME}"
+          TAG="${RELEASE_TAG}"
           ASSET="otelview-${TAG}-${{ matrix.target }}.tar.gz"
           tar -czf "$ASSET" -C "target/${{ matrix.target }}/release" otelview
           shasum -a 256 "$ASSET" > "$ASSET.sha256"
@@ -59,7 +67,7 @@ jobs:
         env:
           TARGET: ${{ matrix.target }}
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${RELEASE_TAG#v}"
           case "${{ matrix.target }}" in
             x86_64-*)  NFPM_ARCH=amd64 ;;
             aarch64-*) NFPM_ARCH=arm64 ;;
@@ -103,6 +111,7 @@ jobs:
       - name: Upload to release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.RELEASE_TAG }}
           files: |
             ${{ env.ASSET }}
             ${{ env.ASSET }}.sha256
@@ -151,7 +160,7 @@ jobs:
 
       - name: Collect artifacts
         run: |
-          TAG="${GITHUB_REF_NAME}"
+          TAG="${RELEASE_TAG}"
           mkdir -p out
           BUNDLE=ui/src-tauri/target/release/bundle
           if [ "${{ matrix.platform }}" = "macos-arm64" ]; then
@@ -193,5 +202,6 @@ jobs:
       - name: Upload to release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.RELEASE_TAG }}
           files: out/*
           generate_release_notes: true
