@@ -49,6 +49,7 @@ Open **http://127.0.0.1:4319** for the UI: trace search + waterfall, live log ta
 ## Highlights
 
 - **All three signals** over OTLP gRPC (`:4317`) and HTTP (`:4318`), with optional header-token auth.
+- **KQL log search** (Kibana-style) with syntax highlighting and autocomplete, plus metric query functions (rate, increase, aggregations).
 - **Storage your way**: in-memory, embedded DuckDB, an external Jaeger v2 remote-storage backend, or another otelview instance.
 - **It's a storage server too**: every instance serves the Jaeger v2 `TraceReader` API plus log/metric reader APIs on its gRPC port.
 - **Single binary** — the web UI is embedded; configuration is YAML or TOML.

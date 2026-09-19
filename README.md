@@ -34,8 +34,9 @@ An alternative to Datadog, Kibana, CloudWatch and SigNoz you can run anywhere: o
 
 ## Highlights
 
-- **All three signals**: trace search + waterfall, live log tail with a severity histogram, metrics explorer with multi-series charts.
+- **All three signals**: trace search + waterfall, live log tail with a severity histogram, metrics explorer with multi-series charts and query functions (rate, increase, sum/avg/min/max across series).
 - **APM built in**: a service dependency map and per-service RED metrics (request rate, error rate, p50/p95/p99 latency) derived live from your traces.
+- **KQL log search** (Kibana-style): `http.method:POST and status_code:>=500`, quoted phrases, wildcards, numeric comparisons, `and`/`or`/`not` — with **syntax highlighting**, **context-aware autocomplete** (field names, then live top values after the `:`) and a discovered-fields sidebar. The trace attribute filter gets the same highlighted, autocompleting editor.
 - **OTLP in, both transports**: gRPC (`:4317`) and HTTP (`:4318`), protobuf **and** JSON, gzip supported, optional header-token auth.
 - **Storage your way**:
   - `memory` — bounded ring buffers, zero setup;
@@ -124,7 +125,7 @@ export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
 
 ![traces](.github/assets/traces.png)
 
-**Logs** — live tail with severity filtering and trace correlation:
+**Logs** — live tail with KQL search, fields sidebar and trace correlation:
 
 ![logs](.github/assets/logs.png)
 
