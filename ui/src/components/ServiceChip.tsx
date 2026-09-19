@@ -9,8 +9,8 @@ export function ServiceChip({ service, small }: { service: string; small?: boole
       } text-default-600`}
     >
       <span
-        className="inline-block h-2 w-2 shrink-0 rounded-full"
-        style={{ background: color, boxShadow: glow }}
+        className="neon-glow inline-block h-2 w-2 shrink-0 rounded-full"
+        style={{ background: color, "--glow": glow } as React.CSSProperties}
       />
       {service}
     </span>

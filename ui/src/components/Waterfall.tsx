@@ -135,8 +135,8 @@ export function Waterfall({ spans }: { spans: SpanRecord[] }) {
                   <span className="w-[13px] shrink-0" />
                 )}
                 <span
-                  className="h-2.5 w-1 shrink-0 rounded-sm"
-                  style={{ background: color, boxShadow: glow }}
+                  className="neon-glow h-2.5 w-1 shrink-0 rounded-sm"
+                  style={{ background: color, "--glow": glow } as React.CSSProperties}
                 />
                 <span className="truncate text-xs">
                   {isErr && (
@@ -162,14 +162,19 @@ export function Waterfall({ spans }: { spans: SpanRecord[] }) {
                   />
                 ))}
                 <div
-                  className="absolute top-1/2 h-[9px] -translate-y-1/2 rounded-[3px]"
-                  style={{
-                    left: `${left}%`,
-                    width: `${w}%`,
-                    background: isErr ? "#FF3864" : color,
-                    boxShadow: isErr ? "0 0 8px rgba(255,56,100,0.75)" : glow,
-                    minWidth: 2,
-                  }}
+                  className="neon-glow absolute top-1/2 h-[11px] -translate-y-1/2 rounded border"
+                  style={
+                    {
+                      left: `${left}%`,
+                      width: `${w}%`,
+                      background: `${isErr ? "#FF3864" : color}8C`,
+                      borderColor: isErr ? "#FF3864" : color,
+                      "--glow": isErr
+                        ? "0 0 8px rgba(255,56,100,0.75)"
+                        : glow,
+                      minWidth: 2,
+                    } as React.CSSProperties
+                  }
                 />
                 <span
                   className="absolute top-1/2 -translate-y-1/2 whitespace-nowrap pl-1.5 text-[10px] text-default-500"

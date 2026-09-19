@@ -88,3 +88,18 @@ kbd.neon-key {
 [data-slot="input-wrapper"][data-focus-visible="true"] {
   border-color: hsl(var(--heroui-default-500)) !important;
 }
+
+/* Neon glows are a dark-theme effect only (bsdkrun pattern): components set
+   --glow / --drop custom properties; light theme renders flat. */
+.neon-glow {
+  box-shadow: none;
+}
+.dark .neon-glow {
+  box-shadow: var(--glow, none);
+}
+.neon-drop {
+  filter: none;
+}
+.dark .neon-drop {
+  filter: var(--drop, none);
+}

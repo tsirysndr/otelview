@@ -52,6 +52,18 @@ describe("filter wiring", () => {
     await waitFor(() => expect(logCalls.at(-1)!.get("service")).toBe("payments"));
   });
 
+  it("min duration input sends min_duration_ms to the API", async () => {
+    renderApp(<TracesView />);
+    await waitFor(() => expect(traceCalls.length).toBeGreaterThan(0));
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "Minimum duration in milliseconds" }),
+      "300",
+    );
+    await waitFor(() =>
+      expect(traceCalls.at(-1)!.get("min_duration_ms")).toBe("300"),
+    );
+  });
+
   it("trace service + errors-only filters reach the API", async () => {
     renderApp(<TracesView />);
     await waitFor(() => expect(traceCalls.length).toBeGreaterThan(0));

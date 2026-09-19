@@ -80,12 +80,14 @@ export function ScatterPlot({
               fillOpacity={0.9}
               stroke={isErr ? "#FFFFFF" : "hsl(var(--heroui-background))"}
               strokeWidth={isErr ? 1.5 : 1}
-              className="cursor-pointer"
-              style={{
-                filter: isErr
-                  ? "drop-shadow(0 0 4px rgba(255,56,100,0.8))"
-                  : "drop-shadow(0 0 3px rgba(5,217,232,0.6))",
-              }}
+              className="neon-drop cursor-pointer"
+              style={
+                {
+                  "--drop": isErr
+                    ? "drop-shadow(0 0 4px rgba(255,56,100,0.8))"
+                    : "drop-shadow(0 0 3px rgba(5,217,232,0.6))",
+                } as React.CSSProperties
+              }
               onMouseEnter={() => setHover(t)}
               onMouseLeave={() => setHover(null)}
               onClick={() => onOpen(t.trace_id)}

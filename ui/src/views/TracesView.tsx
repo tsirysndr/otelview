@@ -91,12 +91,13 @@ function TraceList() {
           startContent={<IconSearch size={14} className="mr-1 shrink-0 text-default-400" />}
         />
         </Field>
-        <Field label="min duration" className="w-32">
+        <Field label="min duration (ms)" className="w-32">
         <Input
           {...plainTextField}
           {...fieldProps}
           aria-label="Minimum duration in milliseconds"
-          placeholder="ms"
+          placeholder="e.g. 300"
+          title="Only traces with a span slower than this many milliseconds"
           value={filters.minDurationMs}
           onValueChange={(minDurationMs) => setFilters({ ...filters, minDurationMs })}
         />
@@ -139,11 +140,13 @@ function TraceList() {
           >
             <div className="flex items-baseline gap-2">
               <span
-                className="h-2.5 w-1 shrink-0 self-center rounded-sm"
-                style={{
-                  background: serviceNeon(t.root_service).color,
-                  boxShadow: serviceNeon(t.root_service).glow,
-                }}
+                className="neon-glow h-2.5 w-1 shrink-0 self-center rounded-sm"
+                style={
+                  {
+                    background: serviceNeon(t.root_service).color,
+                    "--glow": serviceNeon(t.root_service).glow,
+                  } as React.CSSProperties
+                }
               />
               <span className="truncate text-sm font-medium">{t.root_name}</span>
               <span className="shrink-0 text-xs text-neon-cyan">
@@ -162,15 +165,18 @@ function TraceList() {
               {/* relative duration bar (Datadog-style latency read) */}
               <div className="h-1 w-40 shrink-0 overflow-hidden rounded bg-content2">
                 <div
-                  className="h-full rounded"
-                  style={{
-                    width: `${Math.max((t.duration_nanos / maxDuration) * 100, 2)}%`,
-                    background: t.error_count > 0 ? "#FF3864" : serviceNeon(t.root_service).color,
-                    boxShadow:
-                      t.error_count > 0
-                        ? "0 0 6px rgba(255,56,100,0.6)"
-                        : serviceNeon(t.root_service).glow,
-                  }}
+                  className="neon-glow h-full rounded"
+                  style={
+                    {
+                      width: `${Math.max((t.duration_nanos / maxDuration) * 100, 2)}%`,
+                      background:
+                        t.error_count > 0 ? "#FF3864" : serviceNeon(t.root_service).color,
+                      "--glow":
+                        t.error_count > 0
+                          ? "0 0 6px rgba(255,56,100,0.6)"
+                          : serviceNeon(t.root_service).glow,
+                    } as React.CSSProperties
+                  }
                 />
               </div>
               <span className="text-[11px] text-default-500">{t.span_count} spans</span>
