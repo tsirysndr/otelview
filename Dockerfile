@@ -7,7 +7,7 @@ RUN bun run build
 
 FROM rust:1.98-trixie AS build
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends protobuf-compiler unzip \
+    && apt-get install -y --no-install-recommends protobuf-compiler libprotobuf-dev unzip \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
