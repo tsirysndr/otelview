@@ -25,10 +25,10 @@ export const fieldProps = {
 // Compact switch: fixed 12px round thumb in a 32x16 track. Overrides
 // HeroUI's pressed-state thumb stretch, which squeezes at this size.
 export const switchClassNames = {
-  wrapper: "h-4 w-8 mr-0 px-[1px]",
+  wrapper: "h-4 w-8 mr-0 px-[1.5px]",
   thumb:
-    "h-3.5 w-3.5 rounded-full shadow-none " +
-    "group-data-[pressed=true]:w-3.5 " +
+    "h-[13px] w-[13px] rounded-full shadow-none " +
+    "group-data-[pressed=true]:w-[13px] " +
     "group-data-[selected=true]:ms-4 " +
     "group-data-[selected=true]:group-data-[pressed=true]:ms-4",
 } as const;
