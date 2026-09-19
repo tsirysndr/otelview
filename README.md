@@ -99,14 +99,15 @@ sudo dnf install otelview-desktop        # desktop app (optional)
 from the [otelview cachix cache](https://otelview.cachix.org), no compilation):
 
 ```sh
+# accept the flake's cache settings when prompted, or enable it globally:
+cachix use otelview
+
 # try it
 nix run github:tsirysndr/otelview
 
 # install into your profile
 nix profile install github:tsirysndr/otelview
 
-# accept the flake's cache settings when prompted, or enable it globally:
-cachix use otelview
 ```
 
 **Pre-built binaries**: grab a tarball from the
