@@ -8,14 +8,14 @@ export const plainTextField = {
   spellCheck: "false",
 } as const;
 
-// House style for every HeroUI Input/Select: bordered (no filled background —
-// wrong on the dark surfaces), label floated outside so it never overlaps the
-// placeholder, compact.
+// House style for HeroUI Input/Select in toolbars: bordered (no filled
+// background — wrong on the dark surfaces), compact, and label-less — dense
+// filter bars use placeholders + aria-labels; only roomy vertical forms
+// (Settings) carry visible labels.
 export const fieldProps = {
   variant: "bordered",
   radius: "sm",
   size: "sm",
-  labelPlacement: "outside",
 } as const;
 
 export function isTauri(): boolean {

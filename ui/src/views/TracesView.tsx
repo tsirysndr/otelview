@@ -13,6 +13,7 @@ import { fieldProps, plainTextField } from "../lib/inputProps";
 import { api } from "../lib/api";
 import { fmtAgo, fmtDuration } from "../lib/format";
 import { serviceNeon } from "../lib/colors";
+import { Field } from "../components/Field";
 import { ScatterPlot } from "../components/ScatterPlot";
 import { ServiceChip } from "../components/ServiceChip";
 import { Waterfall } from "../components/Waterfall";
@@ -56,11 +57,11 @@ function TraceList() {
     <div className="flex h-full min-h-0 flex-col">
       {/* filter bar */}
       <div className="flex shrink-0 flex-wrap items-end gap-2 border-b border-divider bg-content1 p-2">
+        <Field label="service" className="w-44">
         <Select
           {...fieldProps}
-          label="Service"
+          aria-label="Service"
           placeholder="all services"
-          className="w-44"
           selectedKeys={filters.service ? [filters.service] : []}
           onSelectionChange={(keys) =>
             setFilters({ ...filters, service: (Array.from(keys)[0] as string) ?? "", operation: "" })
@@ -69,11 +70,12 @@ function TraceList() {
         >
           {(item) => <SelectItem key={item.key}>{item.label}</SelectItem>}
         </Select>
+        </Field>
+        <Field label="operation" className="w-52">
         <Select
           {...fieldProps}
-          label="Operation"
+          aria-label="Operation"
           placeholder="all operations"
-          className="w-52"
           selectedKeys={filters.operation ? [filters.operation] : []}
           onSelectionChange={(keys) =>
             setFilters({ ...filters, operation: (Array.from(keys)[0] as string) ?? "" })
@@ -82,26 +84,29 @@ function TraceList() {
         >
           {(item) => <SelectItem key={item.key}>{item.label}</SelectItem>}
         </Select>
+        </Field>
+        <Field label="attributes" className="w-56">
         <Input
           {...plainTextField}
           {...fieldProps}
-          label="Attributes"
-          placeholder="key=value or substring"
-          className="w-56"
+          aria-label="Attribute filter"
+          placeholder="key=value or text"
           value={filters.q}
           onValueChange={(q) => setFilters({ ...filters, q })}
           startContent={<IconSearch size={14} className="text-default-400" />}
         />
+        </Field>
+        <Field label="min duration" className="w-32">
         <Input
           {...plainTextField}
           {...fieldProps}
-          label="Min duration (ms)"
-          placeholder="e.g. 250"
-          className="w-36"
+          aria-label="Minimum duration in milliseconds"
+          placeholder="ms"
           value={filters.minDurationMs}
           onValueChange={(minDurationMs) => setFilters({ ...filters, minDurationMs })}
         />
-        <div className="flex h-12 items-center gap-1.5 pb-1">
+        </Field>
+        <div className="flex items-center gap-1.5 pb-1.5">
           <Switch
             size="sm"
             isSelected={filters.errorsOnly}

@@ -12,6 +12,7 @@ import {
 import { fieldProps, plainTextField } from "../lib/inputProps";
 import { api, type LogRecord } from "../lib/api";
 import { bodyPreview, fmtTime, severityInfo } from "../lib/format";
+import { Field } from "../components/Field";
 import { ServiceChip } from "../components/ServiceChip";
 
 const SEVERITIES = [
@@ -50,11 +51,11 @@ export function LogsView() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 flex-wrap items-end gap-2 border-b border-divider bg-content1 p-2">
+        <Field label="service" className="w-44">
         <Select
           {...fieldProps}
-          label="Service"
+          aria-label="Service"
           placeholder="all services"
-          className="w-44"
           selectedKeys={filters.service ? [filters.service] : []}
           onSelectionChange={(keys) =>
             setFilters({ ...filters, service: (Array.from(keys)[0] as string) ?? "" })
@@ -63,11 +64,11 @@ export function LogsView() {
         >
           {(item) => <SelectItem key={item.key}>{item.label}</SelectItem>}
         </Select>
+        </Field>
+        <Field label="severity" className="w-36">
         <Select
           {...fieldProps}
-          label="Severity"
-          placeholder="all levels"
-          className="w-36"
+          aria-label="Minimum severity"
           selectedKeys={[String(filters.minSeverity)]}
           onSelectionChange={(keys) =>
             setFilters({ ...filters, minSeverity: Number(Array.from(keys)[0] ?? 0) })
@@ -76,16 +77,18 @@ export function LogsView() {
         >
           {(item) => <SelectItem key={item.key}>{item.label}</SelectItem>}
         </Select>
+        </Field>
+        <Field label="search" className="w-72">
         <Input
           {...plainTextField}
           {...fieldProps}
-          label="Search"
+          aria-label="Search logs"
           placeholder="body, attributes…"
-          className="w-72"
           value={filters.search}
           onValueChange={(search) => setFilters({ ...filters, search })}
           startContent={<IconSearch size={14} className="text-default-400" />}
         />
+        </Field>
         <span className="pb-2 text-[11px] text-default-500">
           {logs.length} records{live ? " · tailing" : ""}
         </span>

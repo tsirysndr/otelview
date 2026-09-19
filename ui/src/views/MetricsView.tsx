@@ -10,6 +10,7 @@ import {
 import { api } from "../lib/api";
 import { LineChart, type ChartSeries } from "../components/LineChart";
 import { fieldProps } from "../lib/inputProps";
+import { Field } from "../components/Field";
 
 const TYPE_COLORS: Record<string, "secondary" | "primary" | "warning" | "success" | "default"> = {
   gauge: "secondary",
@@ -104,10 +105,10 @@ export function MetricsView() {
                   <p className="truncate text-xs text-default-500">{activeInfo.description}</p>
                 )}
               </div>
-              <div className="ml-auto w-44">
+              <Field label="service" className="ml-auto w-44">
                 <Select
                   {...fieldProps}
-                  label="Service"
+                  aria-label="Service"
                   placeholder="all services"
                   selectedKeys={service ? [service] : []}
                   onSelectionChange={(keys) =>
@@ -120,7 +121,7 @@ export function MetricsView() {
                 >
                   {(item) => <SelectItem key={item.key}>{item.label}</SelectItem>}
                 </Select>
-              </div>
+              </Field>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-3">
               {chartSeries.length === 0 ? (
