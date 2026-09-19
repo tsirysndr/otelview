@@ -2,6 +2,8 @@
 
 **The open-source, self-hosted OpenTelemetry viewer — traces, metrics and logs in one fast, beautiful, single binary.**
 
+![otelview](https://raw.githubusercontent.com/tsirysndr/otelview/main/.github/assets/preview.png)
+
 An alternative to Datadog, Kibana, CloudWatch and SigNoz you can run anywhere. This package downloads the pre-built `otelview` binary for your platform from [GitHub releases](https://github.com/tsirysndr/otelview/releases) — the binary embeds the OTLP receivers, the storage engine (DuckDB, statically linked) and the web UI. No cluster, no JVM, no SaaS bill.
 
 ## Install
@@ -29,6 +31,20 @@ export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318   # HTTP (protobuf & JS
 ```
 
 Open **http://127.0.0.1:4319** for the UI: trace search + waterfall, live log tail, and a metrics explorer.
+
+## Screenshots
+
+**Traces** — search with a latency scatter plot, then drill into the waterfall:
+
+![traces](https://raw.githubusercontent.com/tsirysndr/otelview/main/.github/assets/traces.png)
+
+**Logs** — live tail with severity filtering and trace correlation:
+
+![logs](https://raw.githubusercontent.com/tsirysndr/otelview/main/.github/assets/logs.png)
+
+**Metrics** — explorer with multi-series charts for every OTLP metric type:
+
+![metrics](https://raw.githubusercontent.com/tsirysndr/otelview/main/.github/assets/metrics.png)
 
 ## Highlights
 
