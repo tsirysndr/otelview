@@ -1,5 +1,7 @@
 # otelview
 
+[![ci](https://github.com/tsirysndr/otelview/actions/workflows/ci.yml/badge.svg)](https://github.com/tsirysndr/otelview/actions/workflows/ci.yml)
+
 **The open-source, self-hosted OpenTelemetry viewer — traces, metrics and logs in one fast, beautiful, single binary.**
 
 An alternative to Datadog, Kibana, CloudWatch and SigNoz you can run anywhere: one static binary embeds the OTLP receivers, the storage engine (DuckDB) and the web UI. No cluster, no JVM, no SaaS bill. Point your apps' OTLP exporters at it and open your browser.
