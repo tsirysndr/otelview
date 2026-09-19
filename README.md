@@ -102,15 +102,15 @@ Reads and writes both speak open protocols on the gRPC port:
 
 ```sh
 ./scripts/fetch-duckdb.sh     # once: download the static libduckdb release
-(cd ui && npm ci && npm run build)
+(cd ui && bun install && bun run build)
 cargo build --release         # single binary at target/release/otelview
 cargo test --release
 
 cd ui
-npm run dev                   # Vite dev server proxying /api → :4319
-npm test                      # vitest + testing-library + msw
-npm run storybook             # component workbench
-npm run tauri dev             # desktop shell (point Settings at a remote API)
+bun run dev                   # Vite dev server proxying /api → :4319
+bun run test                  # vitest + testing-library + msw
+bun run storybook             # component workbench
+bun run tauri dev             # desktop shell (point Settings at a remote API)
 ```
 
 Crate layout: `crates/model` (records), `crates/config`, `crates/storage` (backends + protos), `crates/receiver` (OTLP in + reader servers), `crates/api` (REST + embedded UI), `crates/otelview` (binary). UI: React + Tailwind + HeroUI + Tabler icons, jotai state, VS Code-style layout, Night Rider dark theme.

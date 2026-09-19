@@ -1,15 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import { DateRangePicker } from "@heroui/react";
+import { Button } from "@heroui/react";
 import { IconCalendar, IconX } from "@tabler/icons-react";
 import { useAtom } from "jotai";
-import { parseAbsoluteToLocal, type ZonedDateTime } from "@internationalized/date";
+import { DayPicker, type DateRange } from "react-day-picker";
+import "react-day-picker/style.css";
 import { customRangeAtom, lookbackAtom } from "../state/atoms";
+import { plainTextField } from "../lib/inputProps";
 
 const LOOKBACKS = ["5m", "15m", "1h", "6h", "24h", "7d", "all"];
-
-function toZoned(ms: number): ZonedDateTime {
-  return parseAbsoluteToLocal(new Date(ms).toISOString());
-}
 
 function fmtRange(from: number, to: number): string {
   const opts: Intl.DateTimeFormatOptions = {
@@ -22,27 +20,88 @@ function fmtRange(from: number, to: number): string {
   return `${new Date(from).toLocaleString([], opts)} → ${new Date(to).toLocaleString([], opts)}`;
 }
 
-/** Lookback pills + a themed HeroUI date-time range picker (to the minute). */
-export function TimeRangePicker() {
+function parseTime(s: string): { h: number; m: number } | null {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(s.trim());
+  if (!m) return null;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  if (h > 23 || min > 59) return null;
+  return { h, m: min };
+}
+
+function fmtTimeOf(ms: number): string {
+  const d = new Date(ms);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+const TIME_INPUT =
+  "h-7 w-16 rounded-small border-2 border-default-300 bg-transparent px-1.5 text-center text-xs " +
+  "text-foreground outline-none transition-colors hover:border-default-400 focus:border-default-500";
+
+/** Lookback pills + a custom calendar range popover (react-day-picker,
+ * fully themed) with from/to time-of-day inputs. */
+export function TimeRangePicker({ align = "right" }: { align?: "left" | "right" }) {
   const [lookback, setLookback] = useAtom(lookbackAtom);
   const [custom, setCustom] = useAtom(customRangeAtom);
   const [open, setOpen] = useState(false);
+  const [range, setRange] = useState<DateRange | undefined>();
+  const [fromTime, setFromTime] = useState("00:00");
+  const [toTime, setToTime] = useState("23:59");
+  const [error, setError] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
+
+  const openPanel = () => {
+    if (custom) {
+      setRange({ from: new Date(custom.from), to: new Date(custom.to) });
+      setFromTime(fmtTimeOf(custom.from));
+      setToTime(fmtTimeOf(custom.to));
+    } else {
+      const now = new Date();
+      setRange({ from: now, to: now });
+      setFromTime("00:00");
+      setToTime("23:59");
+    }
+    setError(null);
+    setOpen(true);
+  };
 
   useEffect(() => {
     if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpen(false);
     };
+    window.addEventListener("mousedown", onDown);
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("mousedown", onDown);
+      window.removeEventListener("keydown", onKey);
+    };
   }, [open]);
+
+  const apply = () => {
+    const fromDay = range?.from;
+    const toDay = range?.to ?? range?.from;
+    if (!fromDay || !toDay) return setError("pick a day range");
+    const ft = parseTime(fromTime);
+    const tt = parseTime(toTime);
+    if (!ft || !tt) return setError("times must be HH:MM");
+    const from = new Date(fromDay);
+    from.setHours(ft.h, ft.m, 0, 0);
+    const to = new Date(toDay);
+    to.setHours(tt.h, tt.m, 59, 999);
+    if (from.getTime() >= to.getTime()) return setError("start must be before end");
+    setCustom({ from: from.getTime(), to: to.getTime() });
+    setOpen(false);
+  };
 
   return (
     <div ref={ref} className="relative flex items-center gap-1">
-      {custom && !open ? (
+      {custom ? (
         <button
-          onClick={() => setOpen(true)}
+          onClick={openPanel}
           className="flex items-center gap-1.5 rounded-lg bg-content2 px-2 py-1 text-xs text-neon-cyan"
           title="Custom time range — click to edit"
         >
@@ -60,7 +119,7 @@ export function TimeRangePicker() {
             <IconX size={12} />
           </span>
         </button>
-      ) : !open ? (
+      ) : (
         <div className="flex items-center gap-1 rounded-lg bg-content2 p-0.5">
           {LOOKBACKS.map((lb) => (
             <button
@@ -79,7 +138,7 @@ export function TimeRangePicker() {
             </button>
           ))}
           <button
-            onClick={() => setOpen(true)}
+            onClick={openPanel}
             aria-label="Custom time range"
             title="Custom time range"
             className="rounded-md px-1.5 py-0.5 text-default-500 transition-colors hover:text-foreground"
@@ -87,58 +146,56 @@ export function TimeRangePicker() {
             <IconCalendar size={14} />
           </button>
         </div>
-      ) : (
-        <div className="flex items-center gap-1">
-          <DateRangePicker
-            aria-label="Custom time range"
-            variant="bordered"
-            radius="sm"
-            size="sm"
-            granularity="minute"
-            hideTimeZone
-            hourCycle={24}
-            visibleMonths={1}
-            className="w-[350px]"
-            classNames={{
-              inputWrapper: "border-default-300 data-[hover=true]:border-default-400",
-              selectorIcon: "text-neon-cyan",
-            }}
-            popoverProps={{
-              classNames: {
-                content:
-                  "rounded-large border border-content3 bg-content1 shadow-none",
-              },
-            }}
-            calendarProps={{
-              classNames: {
-                base: "bg-content1",
-                headerWrapper: "bg-content1",
-                gridHeader: "bg-content1 shadow-none",
-                title: "text-default-600 text-xs uppercase tracking-wider",
-                gridHeaderCell: "text-default-500",
-                cellButton:
-                  "data-[today=true]:text-neon-cyan data-[selected=true]:data-[range-selection=true]:bg-primary/20 data-[selection-start=true]:bg-primary data-[selection-end=true]:bg-primary",
-              },
-            }}
-            value={
-              custom
-                ? { start: toZoned(custom.from), end: toZoned(custom.to) }
-                : null
-            }
-            onChange={(v) => {
-              if (!v?.start || !v?.end) return;
-              const from = v.start.toDate().getTime();
-              const to = v.end.toDate().getTime();
-              if (from < to) setCustom({ from, to });
-            }}
+      )}
+
+      {open && (
+        <div
+          className={`otelview-rdp absolute top-9 z-40 flex flex-col gap-2 rounded-large border border-content3 bg-content1 p-3 ${
+            align === "right" ? "right-0" : "left-0"
+          }`}
+        >
+          <DayPicker
+            mode="range"
+            numberOfMonths={1}
+            selected={range}
+            onSelect={setRange}
+            defaultMonth={range?.from}
+            showOutsideDays
+            weekStartsOn={1}
           />
-          <button
-            onClick={() => setOpen(false)}
-            aria-label="Close range picker"
-            className="rounded-md p-1 text-default-500 transition-colors hover:text-foreground"
-          >
-            <IconX size={14} />
-          </button>
+          <div className="flex items-center justify-between gap-2 border-t border-divider pt-2">
+            <label className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-default-500">
+              from
+              <input
+                {...plainTextField}
+                value={fromTime}
+                onChange={(e) => setFromTime(e.target.value)}
+                placeholder="00:00"
+                aria-label="Start time"
+                className={TIME_INPUT}
+              />
+            </label>
+            <label className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-default-500">
+              to
+              <input
+                {...plainTextField}
+                value={toTime}
+                onChange={(e) => setToTime(e.target.value)}
+                placeholder="23:59"
+                aria-label="End time"
+                className={TIME_INPUT}
+              />
+            </label>
+          </div>
+          {error && <p className="text-[11px] text-danger">{error}</p>}
+          <div className="flex justify-end gap-2">
+            <Button size="sm" variant="light" radius="sm" onPress={() => setOpen(false)}>
+              cancel
+            </Button>
+            <Button size="sm" color="secondary" variant="flat" radius="sm" onPress={apply}>
+              apply
+            </Button>
+          </div>
         </div>
       )}
     </div>

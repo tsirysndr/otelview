@@ -10,9 +10,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
+      - uses: oven-sh/setup-bun@v2
       - uses: dtolnay/rust-toolchain@stable
       - uses: arduino/setup-protoc@v3
         with:
@@ -21,8 +19,8 @@ jobs:
       - name: Build web UI (embedded by the api crate)
         working-directory: ui
         run: |
-          npm ci
-          npm run build
+          bun install --frozen-lockfile
+          bun run build
       - name: Fetch pre-built static libduckdb
         run: ./scripts/fetch-duckdb.sh
       - name: Tests
@@ -34,18 +32,16 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
+      - uses: oven-sh/setup-bun@v2
       - name: Install
         working-directory: ui
-        run: npm ci
+        run: bun install --frozen-lockfile
       - name: Typecheck + build
         working-directory: ui
-        run: npm run build
+        run: bun run build
       - name: Tests (vitest + testing-library + msw)
         working-directory: ui
-        run: npm test
+        run: bun run test
       - name: Storybook build
         working-directory: ui
-        run: npm run build-storybook
+        run: bun run build-storybook

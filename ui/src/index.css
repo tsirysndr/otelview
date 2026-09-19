@@ -103,3 +103,47 @@ kbd.neon-key {
 .dark .neon-drop {
   filter: var(--drop, none);
 }
+
+/* react-day-picker themed to Night Rider (scoped to the range popover). */
+.otelview-rdp .rdp-root {
+  --rdp-accent-color: #ff2a6d;
+  --rdp-accent-background-color: rgba(255, 42, 109, 0.16);
+  --rdp-today-color: #05d9e8;
+  --rdp-day-height: 30px;
+  --rdp-day-width: 30px;
+  --rdp-day_button-height: 28px;
+  --rdp-day_button-width: 28px;
+  --rdp-day_button-border-radius: 6px;
+  --rdp-nav_button-height: 26px;
+  --rdp-nav_button-width: 26px;
+  --rdp-outside-opacity: 0.35;
+  --rdp-range_middle-background-color: rgba(255, 42, 109, 0.16);
+  --rdp-range_middle-color: hsl(var(--heroui-foreground));
+  --rdp-range_start-color: #fff;
+  --rdp-range_end-color: #fff;
+  --rdp-selected-border: none;
+  font-size: 12px;
+}
+.otelview-rdp .rdp-month_caption {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: hsl(var(--heroui-default-600));
+}
+.otelview-rdp .rdp-weekday {
+  font-size: 10px;
+  color: hsl(var(--heroui-default-500));
+}
+.otelview-rdp .rdp-chevron {
+  fill: hsl(var(--heroui-default-500));
+}
+.otelview-rdp .rdp-button_previous:hover .rdp-chevron,
+.otelview-rdp .rdp-button_next:hover .rdp-chevron {
+  fill: hsl(var(--heroui-foreground));
+}
+.otelview-rdp .rdp-day_button:hover:not([disabled]) {
+  background: hsl(var(--heroui-content2));
+}
+.otelview-rdp .rdp-selected .rdp-day_button {
+  font-weight: 600;
+}

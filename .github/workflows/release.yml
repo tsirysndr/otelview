@@ -24,9 +24,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
+      - uses: oven-sh/setup-bun@v2
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -39,8 +37,8 @@ jobs:
       - name: Build web UI
         working-directory: ui
         run: |
-          npm ci
-          npm run build
+          bun install --frozen-lockfile
+          bun run build
 
       - name: Fetch pre-built static libduckdb
         run: ./scripts/fetch-duckdb.sh
@@ -80,9 +78,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
+      - uses: oven-sh/setup-bun@v2
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -96,7 +92,7 @@ jobs:
 
       - name: Install UI deps
         working-directory: ui
-        run: npm ci
+        run: bun install --frozen-lockfile
 
       - name: Build desktop app (ad-hoc signed on macOS)
         working-directory: ui
@@ -104,7 +100,7 @@ jobs:
           # "-" = macOS ad-hoc signature: no Apple developer certificate
           # needed; users bypass Gatekeeper with right-click → Open.
           APPLE_SIGNING_IDENTITY: "-"
-        run: npm run tauri build -- --bundles ${{ matrix.bundles }}
+        run: bun run tauri build -- --bundles ${{ matrix.bundles }}
 
       - name: Collect artifacts
         run: |
