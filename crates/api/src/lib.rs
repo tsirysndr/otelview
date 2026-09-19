@@ -56,7 +56,7 @@ pub fn router(cfg: &Config, storage: DynStorage) -> Router {
         .route("/stats", get(stats))
         .route("/config", get(config_view))
         .with_state(state.clone());
-    if cfg.auth.enabled() && cfg.auth.protect_api {
+    if cfg.ui.auth_enabled() || (cfg.auth.enabled() && cfg.auth.protect_api) {
         api = api.layer(axum::middleware::from_fn_with_state(state, require_token));
     }
     let mut app = Router::new().nest("/api", api).fallback(static_handler);
@@ -73,7 +73,16 @@ async fn require_token(
     next: axum::middleware::Next,
 ) -> Response {
     let auth = &state.config.auth;
-    let expected = auth.token.as_deref().unwrap_or_default();
+    // The UI token guards the query API when set; otherwise fall back to the
+    // ingest token (protect_api mode).
+    let expected = state
+        .config
+        .ui
+        .token
+        .as_deref()
+        .filter(|t| !t.is_empty())
+        .or(auth.token.as_deref())
+        .unwrap_or_default();
     // Accept the token either as the configured header or as a Bearer token
     // (browsers and the desktop app use the latter).
     let provided = headers
@@ -398,6 +407,35 @@ mod tests {
             .oneshot(
                 Request::get("/api/services")
                     .header("authorization", "Bearer sekret")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn ui_token_gates_the_api() {
+        let (mut cfg, storage) = test_state();
+        cfg.ui.token = Some("ui-sekret".into());
+        let app = router(&cfg, storage);
+
+        let (status, _) = get_json(app.clone(), "/api/services").await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+        // Static shell stays public so the login screen can load.
+        let resp = app
+            .clone()
+            .oneshot(Request::get("/").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let resp = app
+            .oneshot(
+                Request::get("/api/services")
+                    .header("authorization", "Bearer ui-sekret")
                     .body(Body::empty())
                     .unwrap(),
             )

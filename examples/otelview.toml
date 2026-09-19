@@ -24,3 +24,4 @@ auth_header = "x-otelview-token"
 [ui]
 listen = "127.0.0.1:4319"
 cors = true
+# token = "ui-sekret"      # optional: require this token to use the web UI

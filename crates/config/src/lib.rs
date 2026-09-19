@@ -185,11 +185,20 @@ pub struct UiConfig {
     pub listen: String,
     /// Allow cross-origin API access (useful for the Tauri desktop app).
     pub cors: bool,
+    /// Optional token required to use the web UI (sent as a Bearer token or
+    /// via the auth header). Unset = UI open.
+    pub token: Option<String>,
 }
 
 impl Default for UiConfig {
     fn default() -> Self {
-        Self { listen: "127.0.0.1:4319".into(), cors: true }
+        Self { listen: "127.0.0.1:4319".into(), cors: true, token: None }
+    }
+}
+
+impl UiConfig {
+    pub fn auth_enabled(&self) -> bool {
+        self.token.as_deref().map(|t| !t.is_empty()).unwrap_or(false)
     }
 }
 
@@ -243,6 +252,9 @@ impl Config {
         }
         if c.storage.remote.auth_token.is_some() {
             c.storage.remote.auth_token = Some("***".into());
+        }
+        if c.ui.token.is_some() {
+            c.ui.token = Some("***".into());
         }
 
         c

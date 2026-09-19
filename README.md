@@ -79,6 +79,7 @@ storage:
 ui:
   listen: "127.0.0.1:4319"
   cors: true                   # allow the desktop app / other origins
+  # token: ui-sekret           # optional: require a token to use the web UI
 
 log_level: info
 ```

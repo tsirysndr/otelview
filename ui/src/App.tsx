@@ -4,6 +4,7 @@ import { apiSettingsAtom, railVisibleAtom, themeAtom, viewAtom } from "./state/a
 import { setApiConfig } from "./lib/api";
 import { applyTheme } from "./theme";
 import { useShortcuts } from "./hooks/useShortcuts";
+import { AuthGate } from "./components/AuthGate";
 import { TopBar } from "./components/TopBar";
 import { IconRail } from "./components/IconRail";
 import { StatusLine } from "./components/StatusLine";
@@ -30,20 +31,22 @@ export default function App() {
 
   return (
     <div className="flex h-[100dvh] flex-col overflow-hidden bg-background text-foreground">
-      <TopBar />
-      <div className="flex min-h-0 flex-1">
-        {rail && <IconRail />}
-        <main className="min-h-0 min-w-0 flex-1 overflow-hidden bg-background">
-          {view === "traces" && <TracesView />}
-          {view === "logs" && <LogsView />}
-          {view === "metrics" && <MetricsView />}
-          {view === "settings" && <SettingsView />}
-        </main>
-        <Inspector />
-      </div>
-      <StatusLine />
-      <CommandPalette />
-      <HelpModal />
+      <AuthGate>
+        <TopBar />
+        <div className="flex min-h-0 flex-1">
+          {rail && <IconRail />}
+          <main className="min-h-0 min-w-0 flex-1 overflow-hidden bg-background">
+            {view === "traces" && <TracesView />}
+            {view === "logs" && <LogsView />}
+            {view === "metrics" && <MetricsView />}
+            {view === "settings" && <SettingsView />}
+          </main>
+          <Inspector />
+        </div>
+        <StatusLine />
+        <CommandPalette />
+        <HelpModal />
+      </AuthGate>
     </div>
   );
 }
