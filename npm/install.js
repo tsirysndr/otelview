@@ -8,7 +8,7 @@ const { execFileSync } = require("child_process");
 
 const pkg = require("./package.json");
 const REPO = "tsirysndr/otelview";
-const VERSION = `v${pkg.version}`;
+const VERSION = process.env.OTELVIEW_VERSION || `v${pkg.version}`;
 
 function target() {
   const { platform, arch } = process;
@@ -28,16 +28,36 @@ async function download(url, dest) {
   fs.writeFileSync(dest, buf);
 }
 
+async function latestVersion() {
+  const res = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, {
+    redirect: "follow",
+  });
+  if (!res.ok) throw new Error(`could not resolve the latest release (${res.status})`);
+  return (await res.json()).tag_name;
+}
+
+async function fetchArchive(version, triple, dest) {
+  const asset = `otelview-${version}-${triple}.tar.gz`;
+  const url = `https://github.com/${REPO}/releases/download/${version}/${asset}`;
+  console.log(`otelview: downloading ${url}`);
+  await download(url, dest);
+}
+
 async function main() {
   const triple = target();
-  const asset = `otelview-${VERSION}-${triple}.tar.gz`;
-  const url = `https://github.com/${REPO}/releases/download/${VERSION}/${asset}`;
   const binDir = path.join(__dirname, "bin");
   fs.mkdirSync(binDir, { recursive: true });
-  const archive = path.join(binDir, asset);
+  const archive = path.join(binDir, "otelview.tar.gz");
 
-  console.log(`otelview: downloading ${url}`);
-  await download(url, archive);
+  try {
+    await fetchArchive(VERSION, triple, archive);
+  } catch (err) {
+    // No asset for this package version (yet): fall back to the newest release.
+    const latest = await latestVersion();
+    if (latest === VERSION) throw err;
+    console.log(`otelview: ${VERSION} not found, falling back to ${latest}`);
+    await fetchArchive(latest, triple, archive);
+  }
   execFileSync("tar", ["-xzf", archive, "-C", binDir]);
   fs.rmSync(archive);
   const bin = path.join(binDir, "otelview");
@@ -45,7 +65,11 @@ async function main() {
   console.log(`otelview: installed ${bin}`);
 }
 
-main().catch((err) => {
-  console.error(String(err && err.message ? err.message : err));
-  process.exit(1);
-});
+module.exports = { main };
+
+if (require.main === module) {
+  main().catch((err) => {
+    console.error(String(err && err.message ? err.message : err));
+    process.exit(1);
+  });
+}
