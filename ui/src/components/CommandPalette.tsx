@@ -105,7 +105,7 @@ export function CommandPalette() {
       <Command
         label="Search and commands"
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-xl overflow-hidden rounded-large border border-content3 bg-content1 shadow-[0_0_30px_rgba(255,42,109,0.15)]"
+        className="w-full max-w-xl overflow-hidden rounded-large border border-content3 bg-content1"
       >
         <div className="flex items-center gap-2 border-b border-content3 px-4">
           <IconSearch size={16} className="shrink-0 text-default-400" />

@@ -6,7 +6,7 @@ import { SHORTCUTS } from "../hooks/useShortcuts";
 export function HelpModal() {
   const [open, setOpen] = useAtom(helpOpenAtom);
   return (
-    <Modal isOpen={open} onOpenChange={setOpen} size="md" backdrop="blur">
+    <Modal isOpen={open} onOpenChange={setOpen} size="md" backdrop="blur" shadow="none">
       <ModalContent>
         <ModalHeader className="text-sm uppercase tracking-wider text-default-500">
           keyboard shortcuts
