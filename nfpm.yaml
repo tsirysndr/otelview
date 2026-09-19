@@ -1,0 +1,19 @@
+# nfpm config for the otelview CLI packages (.deb / .rpm).
+# VERSION, NFPM_ARCH and TARGET are provided by the release workflow.
+name: otelview
+arch: ${NFPM_ARCH}
+platform: linux
+version: ${VERSION}
+section: utils
+priority: optional
+maintainer: Tsiry Sandratraina <tsiry.sndr@rocksky.app>
+description: |
+  Open-source, self-hosted OpenTelemetry viewer in a single binary.
+  Receives OTLP traces, metrics and logs (gRPC :4317, HTTP :4318) and serves
+  a web UI (:4319) with embedded DuckDB storage.
+vendor: Tsiry Sandratraina
+homepage: https://github.com/tsirysndr/otelview
+license: MIT
+contents:
+  - src: target/${TARGET}/release/otelview
+    dst: /usr/bin/otelview

@@ -54,12 +54,59 @@ jobs:
           shasum -a 256 "$ASSET" > "$ASSET.sha256"
           echo "ASSET=$ASSET" >> "$GITHUB_ENV"
 
+      - name: Build deb and rpm packages (nfpm)
+        if: runner.os == 'Linux'
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          case "${{ matrix.target }}" in
+            x86_64-*)  NFPM_ARCH=amd64 ;;
+            aarch64-*) NFPM_ARCH=arm64 ;;
+          esac
+          mkdir -p dist
+          docker run --rm -v "$PWD:/work" -w /work \
+            -e VERSION="$VERSION" -e NFPM_ARCH="$NFPM_ARCH" -e TARGET="$TARGET" \
+            goreleaser/nfpm package -f nfpm.yaml -p deb -t dist/
+          docker run --rm -v "$PWD:/work" -w /work \
+            -e VERSION="$VERSION" -e NFPM_ARCH="$NFPM_ARCH" -e TARGET="$TARGET" \
+            goreleaser/nfpm package -f nfpm.yaml -p rpm -t dist/
+          (cd dist && shasum -a 256 * > "SHA256SUMS-packages-$NFPM_ARCH.txt")
+          ls -la dist/
+
+      - name: Check Gemfury secrets
+        if: runner.os == 'Linux'
+        id: gemfury
+        env:
+          FURY_TOKEN: ${{ secrets.FURY_TOKEN }}
+          FURY_ACCOUNT: ${{ secrets.FURY_ACCOUNT }}
+        run: |
+          if [ -n "$FURY_TOKEN" ] && [ -n "$FURY_ACCOUNT" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "Gemfury secrets not set; skipping package upload"
+          fi
+
+      - name: Push deb and rpm to Gemfury
+        if: runner.os == 'Linux' && steps.gemfury.outputs.available == 'true'
+        env:
+          FURY_TOKEN: ${{ secrets.FURY_TOKEN }}
+          FURY_ACCOUNT: ${{ secrets.FURY_ACCOUNT }}
+        run: |
+          for package in dist/*.deb dist/*.rpm; do
+            curl -fsS -F package=@"$package" \
+              "https://${FURY_TOKEN}@push.fury.io/${FURY_ACCOUNT}/"
+            echo
+          done
+
       - name: Upload to release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             ${{ env.ASSET }}
             ${{ env.ASSET }}.sha256
+            dist/*
           generate_release_notes: true
 
   desktop:
@@ -74,7 +121,7 @@ jobs:
             bundles: dmg
           - os: ubuntu-24.04
             platform: linux-x86_64
-            bundles: appimage,deb
+            bundles: appimage,deb,rpm
     steps:
       - uses: actions/checkout@v4
 
@@ -112,8 +159,36 @@ jobs:
           else
             cp "$BUNDLE"/appimage/*.AppImage "out/otelview-desktop-${TAG}-linux-x86_64.AppImage"
             cp "$BUNDLE"/deb/*.deb "out/otelview-desktop-${TAG}-linux-x86_64.deb"
+            cp "$BUNDLE"/rpm/*.rpm "out/otelview-desktop-${TAG}-linux-x86_64.rpm"
           fi
           (cd out && shasum -a 256 * > SHA256SUMS-desktop-${{ matrix.platform }}.txt)
+
+      - name: Check Gemfury secrets
+        if: runner.os == 'Linux'
+        id: gemfury
+        env:
+          FURY_TOKEN: ${{ secrets.FURY_TOKEN }}
+          FURY_ACCOUNT: ${{ secrets.FURY_ACCOUNT }}
+        run: |
+          if [ -n "$FURY_TOKEN" ] && [ -n "$FURY_ACCOUNT" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "Gemfury secrets not set; skipping package upload"
+          fi
+
+      - name: Push desktop deb and rpm to Gemfury
+        if: runner.os == 'Linux' && steps.gemfury.outputs.available == 'true'
+        env:
+          FURY_TOKEN: ${{ secrets.FURY_TOKEN }}
+          FURY_ACCOUNT: ${{ secrets.FURY_ACCOUNT }}
+        run: |
+          BUNDLE=ui/src-tauri/target/release/bundle
+          for package in "$BUNDLE"/deb/*.deb "$BUNDLE"/rpm/*.rpm; do
+            curl -fsS -F package=@"$package" \
+              "https://${FURY_TOKEN}@push.fury.io/${FURY_ACCOUNT}/"
+            echo
+          done
 
       - name: Upload to release
         uses: softprops/action-gh-release@v2

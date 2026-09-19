@@ -68,6 +68,30 @@ docker run -p 4317:4317 -p 4318:4318 -p 4319:4319 \
 bun install -g otelview   # or: npm install -g otelview
 ```
 
+**Debian / Ubuntu** (APT, `amd64` and `arm64`):
+
+```sh
+echo "deb [trusted=yes] https://apt.fury.io/tsiry/ /" \\
+  | sudo tee /etc/apt/sources.list.d/otelview.list
+sudo apt-get update
+sudo apt-get install otelview            # CLI/server
+sudo apt-get install otelview-desktop    # desktop app (optional)
+```
+
+**Fedora / RHEL / Rocky / Alma** (DNF, `x86_64` and `aarch64`):
+
+```sh
+sudo tee /etc/yum.repos.d/otelview.repo <<'EOF'
+[otelview]
+name=otelview
+baseurl=https://yum.fury.io/tsiry/
+enabled=1
+gpgcheck=0
+EOF
+sudo dnf install otelview                # CLI/server
+sudo dnf install otelview-desktop        # desktop app (optional)
+```
+
 **Pre-built binaries**: grab a tarball from the
 [releases page](https://github.com/tsirysndr/otelview/releases); the desktop
 app ships there too (`.dmg`, `.AppImage`, `.deb`).
