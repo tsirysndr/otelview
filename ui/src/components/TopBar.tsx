@@ -14,18 +14,15 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   inspectorOpenAtom,
   liveAtom,
-  lookbackAtom,
   paletteOpenAtom,
   railVisibleAtom,
   themeAtom,
 } from "../state/atoms";
 import { isMac, isTauri } from "../lib/inputProps";
-
-const LOOKBACKS = ["5m", "15m", "1h", "6h", "24h", "7d", "all"];
+import { TimeRangePicker } from "./TimeRangePicker";
 
 export function TopBar() {
   const [theme, setTheme] = useAtom(themeAtom);
-  const [lookback, setLookback] = useAtom(lookbackAtom);
   const [live, setLive] = useAtom(liveAtom);
   const [rail, setRail] = useAtom(railVisibleAtom);
   const [inspector, setInspector] = useAtom(inspectorOpenAtom);
@@ -53,21 +50,7 @@ export function TopBar() {
       <div data-tauri-drag-region className="flex-1" />
 
       {/* Global time range */}
-      <div className="flex items-center gap-1 rounded-lg bg-content2 p-0.5">
-        {LOOKBACKS.map((lb) => (
-          <button
-            key={lb}
-            onClick={() => setLookback(lb)}
-            className={`rounded-md px-2 py-0.5 text-xs transition-colors ${
-              lookback === lb
-                ? "bg-content4 text-foreground"
-                : "text-default-500 hover:text-foreground"
-            }`}
-          >
-            {lb}
-          </button>
-        ))}
-      </div>
+      <TimeRangePicker />
 
       <Tooltip content="Auto-refresh (l)" delay={400}>
         <div className="flex items-center gap-1.5">

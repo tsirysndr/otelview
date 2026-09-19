@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { IconChevronDown, IconChevronRight, IconAlertTriangle } from "@tabler/icons-react";
 import { useAtom, useSetAtom } from "jotai";
 import { inspectorOpenAtom, selectedSpanIdAtom } from "../state/atoms";
@@ -41,6 +41,11 @@ export function Waterfall({ spans }: { spans: SpanRecord[] }) {
   const [selectedSpanId, setSelectedSpanId] = useAtom(selectedSpanIdAtom);
   const setInspectorOpen = useSetAtom(inspectorOpenAtom);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  /** Cursor tracker over the timeline: x/y within the rows block + trace-relative time. */
+  const [cursor, setCursor] = useState<{ x: number; y: number; t: number; width: number } | null>(
+    null,
+  );
+  const rowsRef = useRef<HTMLDivElement>(null);
 
   const roots = useMemo(() => buildTree(spans), [spans]);
   const t0 = Math.min(...spans.map((s) => s.start_time_unix_nano));
@@ -68,6 +73,20 @@ export function Waterfall({ spans }: { spans: SpanRecord[] }) {
   const ticks = [0, 0.25, 0.5, 0.75, 1];
   const NAME_W = 320;
 
+  const onTimelineMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const el = rowsRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    if (x <= NAME_W) {
+      setCursor(null);
+      return;
+    }
+    const frac = Math.min(Math.max((x - NAME_W) / (rect.width - NAME_W), 0), 1);
+    setCursor({ x, y, t: frac * total, width: rect.width });
+  };
+
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-auto">
       {/* time scale header */}
@@ -94,7 +113,32 @@ export function Waterfall({ spans }: { spans: SpanRecord[] }) {
         </div>
       </div>
 
-      <div style={{ minWidth: NAME_W + 400 }}>
+      <div
+        ref={rowsRef}
+        className="relative"
+        style={{ minWidth: NAME_W + 400 }}
+        onMouseMove={onTimelineMove}
+        onMouseLeave={() => setCursor(null)}
+      >
+        {/* cursor time tracker */}
+        {cursor && (
+          <>
+            <div
+              className="pointer-events-none absolute inset-y-0 z-20 w-px bg-neon-cyan/60"
+              style={{ left: cursor.x }}
+            />
+            <div
+              className="pointer-events-none absolute z-20 whitespace-nowrap rounded border border-content3 bg-content1 px-1.5 py-0.5 text-[10px] text-neon-cyan"
+              style={{
+                left: cursor.x + 90 > cursor.width ? undefined : cursor.x + 8,
+                right: cursor.x + 90 > cursor.width ? cursor.width - cursor.x + 8 : undefined,
+                top: Math.max(cursor.y - 22, 2),
+              }}
+            >
+              +{fmtDuration(cursor.t)}
+            </div>
+          </>
+        )}
         {rows.map((n) => {
           const s = n.span;
           const left = ((s.start_time_unix_nano - t0) / total) * 100;

@@ -75,17 +75,22 @@ export function ScatterPlot({
               key={t.trace_id}
               cx={x(t.start_time_unix_nano)}
               cy={y(t.duration_nanos)}
-              r={hover?.trace_id === t.trace_id ? 6 : 4.5}
+              r={hover?.trace_id === t.trace_id ? 9 : 6}
               fill={isErr ? STATUS.error : "#05D9E8"}
               fillOpacity={0.9}
               stroke={isErr ? "#FFFFFF" : "hsl(var(--heroui-background))"}
               strokeWidth={isErr ? 1.5 : 1}
-              className="neon-drop cursor-pointer"
+              className="neon-drop cursor-pointer transition-[r]"
               style={
                 {
-                  "--drop": isErr
-                    ? "drop-shadow(0 0 4px rgba(255,56,100,0.8))"
-                    : "drop-shadow(0 0 3px rgba(5,217,232,0.6))",
+                  "--drop":
+                    hover?.trace_id === t.trace_id
+                      ? isErr
+                        ? "drop-shadow(0 0 10px rgba(255,56,100,1)) drop-shadow(0 0 18px rgba(255,56,100,0.6))"
+                        : "drop-shadow(0 0 10px rgba(5,217,232,1)) drop-shadow(0 0 18px rgba(5,217,232,0.6))"
+                      : isErr
+                        ? "drop-shadow(0 0 4px rgba(255,56,100,0.8))"
+                        : "drop-shadow(0 0 3px rgba(5,217,232,0.6))",
                 } as React.CSSProperties
               }
               onMouseEnter={() => setHover(t)}

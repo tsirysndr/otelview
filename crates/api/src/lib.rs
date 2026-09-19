@@ -153,16 +153,21 @@ struct TraceParams {
     max_duration_ms: Option<f64>,
     /// Lookback window like "15m", "1h", "7d".
     lookback: Option<String>,
+    /// Absolute range (unix millis); overrides lookback when set.
+    start_ms: Option<u64>,
+    end_ms: Option<u64>,
     errors_only: Option<bool>,
     limit: Option<usize>,
 }
 
 async fn traces(State(state): State<ApiState>, Query(p): Query<TraceParams>) -> Response {
-    let start_time_min_unix_nano = p
-        .lookback
-        .as_deref()
-        .and_then(parse_lookback)
-        .map(|window| now_unix_nanos().saturating_sub(window));
+    let start_time_min_unix_nano = p.start_ms.map(|ms| ms * 1_000_000).or_else(|| {
+        p.lookback
+            .as_deref()
+            .and_then(parse_lookback)
+            .map(|window| now_unix_nanos().saturating_sub(window))
+    });
+    let start_time_max_unix_nano = p.end_ms.map(|ms| ms * 1_000_000);
     let q = TraceQuery {
         service: p.service.filter(|s| !s.is_empty()),
         operation: p.operation.filter(|s| !s.is_empty()),
@@ -170,7 +175,7 @@ async fn traces(State(state): State<ApiState>, Query(p): Query<TraceParams>) -> 
         min_duration_nanos: p.min_duration_ms.map(|ms| (ms * 1e6) as u64),
         max_duration_nanos: p.max_duration_ms.map(|ms| (ms * 1e6) as u64),
         start_time_min_unix_nano,
-        start_time_max_unix_nano: None,
+        start_time_max_unix_nano,
         errors_only: p.errors_only.unwrap_or(false),
         limit: p.limit.unwrap_or(20).clamp(1, 500),
     };
@@ -200,22 +205,27 @@ struct LogParams {
     search: Option<String>,
     trace_id: Option<String>,
     lookback: Option<String>,
+    /// Absolute range (unix millis); overrides lookback when set.
+    start_ms: Option<u64>,
+    end_ms: Option<u64>,
     limit: Option<usize>,
 }
 
 async fn logs(State(state): State<ApiState>, Query(p): Query<LogParams>) -> Response {
-    let time_min_unix_nano = p
-        .lookback
-        .as_deref()
-        .and_then(parse_lookback)
-        .map(|window| now_unix_nanos().saturating_sub(window));
+    let time_min_unix_nano = p.start_ms.map(|ms| ms * 1_000_000).or_else(|| {
+        p.lookback
+            .as_deref()
+            .and_then(parse_lookback)
+            .map(|window| now_unix_nanos().saturating_sub(window))
+    });
+    let time_max_unix_nano = p.end_ms.map(|ms| ms * 1_000_000);
     let q = LogQuery {
         service: p.service.filter(|s| !s.is_empty()),
         min_severity: p.min_severity.filter(|s| *s > 0),
         search: p.search.filter(|s| !s.is_empty()),
         trace_id: p.trace_id.filter(|s| !s.is_empty()),
         time_min_unix_nano,
-        time_max_unix_nano: None,
+        time_max_unix_nano,
         limit: p.limit.unwrap_or(200).clamp(1, 5000),
     };
     match state.storage.query_logs(q).await {
@@ -236,6 +246,9 @@ struct SeriesParams {
     name: String,
     service: Option<String>,
     lookback: Option<String>,
+    /// Absolute range (unix millis); overrides lookback when set.
+    start_ms: Option<u64>,
+    end_ms: Option<u64>,
     max_points: Option<usize>,
 }
 
@@ -243,16 +256,18 @@ async fn metric_series(
     State(state): State<ApiState>,
     Query(p): Query<SeriesParams>,
 ) -> Response {
-    let time_min_unix_nano = p
-        .lookback
-        .as_deref()
-        .and_then(parse_lookback)
-        .map(|window| now_unix_nanos().saturating_sub(window));
+    let time_min_unix_nano = p.start_ms.map(|ms| ms * 1_000_000).or_else(|| {
+        p.lookback
+            .as_deref()
+            .and_then(parse_lookback)
+            .map(|window| now_unix_nanos().saturating_sub(window))
+    });
+    let time_max_unix_nano = p.end_ms.map(|ms| ms * 1_000_000);
     let q = MetricQuery {
         name: p.name,
         service: p.service.filter(|s| !s.is_empty()),
         time_min_unix_nano,
-        time_max_unix_nano: None,
+        time_max_unix_nano,
         max_points: p.max_points.unwrap_or(500).clamp(10, 10_000),
     };
     match state.storage.query_metric_series(q).await {
@@ -389,6 +404,26 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn absolute_time_range_filters_traces() {
+        let (cfg, storage) = test_state();
+        storage
+            .insert_spans(vec![
+                span("old", "svc", 1_000_000_000),
+                span("mid", "svc", 5_000_000_000),
+                span("new", "svc", 9_000_000_000),
+            ])
+            .await
+            .unwrap();
+        let app = router(&cfg, storage);
+        // Window [3s, 7s] in millis picks only the middle trace.
+        let (status, v) =
+            get_json(app, "/api/traces?start_ms=3000&end_ms=7000&limit=10").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(v.as_array().unwrap().len(), 1);
+        assert_eq!(v[0]["trace_id"], "mid");
     }
 
     #[test]

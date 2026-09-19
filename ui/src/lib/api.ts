@@ -78,6 +78,8 @@ export interface TraceSearchParams {
   min_duration_ms?: number;
   errors_only?: boolean;
   lookback?: string;
+  start_ms?: number;
+  end_ms?: number;
   limit?: number;
 }
 
@@ -87,7 +89,18 @@ export interface LogSearchParams {
   search?: string;
   trace_id?: string;
   lookback?: string;
+  start_ms?: number;
+  end_ms?: number;
   limit?: number;
+}
+
+export interface SeriesSearchParams {
+  name: string;
+  service?: string;
+  lookback?: string;
+  start_ms?: number;
+  end_ms?: number;
+  max_points?: number;
 }
 
 let apiConfig = { baseUrl: "", token: "" };
@@ -131,7 +144,7 @@ export const api = {
   trace: (traceId: string) => request<SpanRecord[]>(`/api/traces/${traceId}`),
   logs: (p: LogSearchParams) => request<LogRecord[]>("/api/logs", { ...p }),
   metrics: () => request<MetricInfo[]>("/api/metrics"),
-  metricSeries: (name: string, service?: string, lookback?: string) =>
-    request<MetricSeries[]>("/api/metrics/series", { name, service, lookback }),
+  metricSeries: (p: SeriesSearchParams) =>
+    request<MetricSeries[]>("/api/metrics/series", { ...p }),
   stats: () => request<StorageStats>("/api/stats"),
 };

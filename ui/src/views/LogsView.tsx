@@ -6,9 +6,9 @@ import {
   inspectorOpenAtom,
   liveAtom,
   logFiltersAtom,
-  lookbackAtom,
   selectedLogAtom,
 } from "../state/atoms";
+import { useTimeParams } from "../hooks/useTimeParams";
 import { fieldProps, plainTextField } from "../lib/inputProps";
 import { api, type LogRecord } from "../lib/api";
 import { bodyPreview, fmtTime, severityInfo } from "../lib/format";
@@ -30,20 +30,20 @@ function logKey(l: LogRecord, i: number) {
 
 export function LogsView() {
   const [filters, setFilters] = useAtom(logFiltersAtom);
-  const lookback = useAtomValue(lookbackAtom);
+  const timeParams = useTimeParams();
   const live = useAtomValue(liveAtom);
   const [selectedLog, setSelectedLog] = useAtom(selectedLogAtom);
   const setInspectorOpen = useSetAtom(inspectorOpenAtom);
 
   const { data: services = [] } = useQuery({ queryKey: ["services"], queryFn: api.services });
   const { data: logs = [], isLoading } = useQuery({
-    queryKey: ["logs", filters, lookback],
+    queryKey: ["logs", filters, timeParams],
     queryFn: () =>
       api.logs({
         service: filters.service || undefined,
         min_severity: filters.minSeverity || undefined,
         search: filters.search || undefined,
-        lookback,
+        ...timeParams,
         limit: filters.limit,
       }),
     refetchInterval: live ? 2_000 : false,

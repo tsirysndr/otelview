@@ -36,6 +36,8 @@ export const apiSettingsAtom = atomWithStorage<ApiSettings>("otelview.api", {
 
 /** Shared filters. */
 export const lookbackAtom = atomWithStorage<string>("otelview.lookback", "1h");
+/** Absolute time range (unix millis); overrides the lookback when set. */
+export const customRangeAtom = atom<{ from: number; to: number } | null>(null);
 export const liveAtom = atomWithStorage<boolean>("otelview.live", true);
 
 /** Trace search filters (jotai-global so they survive view switches). */

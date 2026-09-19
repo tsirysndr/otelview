@@ -3,10 +3,10 @@ import { useQuery } from "@tanstack/react-query";
 import { useAtom, useAtomValue } from "jotai";
 import {
   liveAtom,
-  lookbackAtom,
   metricServiceAtom,
   selectedMetricAtom,
 } from "../state/atoms";
+import { useTimeParams } from "../hooks/useTimeParams";
 import { api } from "../lib/api";
 import { LineChart, type ChartSeries } from "../components/LineChart";
 import { Field } from "../components/Field";
@@ -28,7 +28,7 @@ function seriesLabel(service: string, attrs: Record<string, unknown>): string {
 export function MetricsView() {
   const [selected, setSelected] = useAtom(selectedMetricAtom);
   const [service, setService] = useAtom(metricServiceAtom);
-  const lookback = useAtomValue(lookbackAtom);
+  const timeParams = useTimeParams();
   const live = useAtomValue(liveAtom);
 
   const { data: metrics = [], isLoading } = useQuery({
@@ -42,8 +42,9 @@ export function MetricsView() {
   const activeInfo = metrics.find((m) => m.name === active);
 
   const { data: series = [] } = useQuery({
-    queryKey: ["series", active, service, lookback],
-    queryFn: () => api.metricSeries(active!, service || undefined, lookback),
+    queryKey: ["series", active, service, timeParams],
+    queryFn: () =>
+      api.metricSeries({ name: active!, service: service || undefined, ...timeParams }),
     enabled: !!active,
     refetchInterval: live ? 5_000 : false,
   });

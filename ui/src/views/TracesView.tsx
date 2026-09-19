@@ -4,12 +4,12 @@ import { useQuery } from "@tanstack/react-query";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import {
   liveAtom,
-  lookbackAtom,
   openTraceIdAtom,
   selectedSpanIdAtom,
   traceFiltersAtom,
 } from "../state/atoms";
 import { fieldProps, plainTextField } from "../lib/inputProps";
+import { useTimeParams } from "../hooks/useTimeParams";
 import { api } from "../lib/api";
 import { fmtAgo, fmtDuration } from "../lib/format";
 import { serviceNeon } from "../lib/colors";
@@ -21,7 +21,7 @@ import { Waterfall } from "../components/Waterfall";
 
 function TraceList() {
   const [filters, setFilters] = useAtom(traceFiltersAtom);
-  const lookback = useAtomValue(lookbackAtom);
+  const timeParams = useTimeParams();
   const live = useAtomValue(liveAtom);
   const setOpenTrace = useSetAtom(openTraceIdAtom);
   const setSelectedSpan = useSetAtom(selectedSpanIdAtom);
@@ -33,7 +33,7 @@ function TraceList() {
   });
 
   const { data: traces = [], isLoading } = useQuery({
-    queryKey: ["traces", filters, lookback],
+    queryKey: ["traces", filters, timeParams],
     queryFn: () =>
       api.traces({
         service: filters.service || undefined,
@@ -41,7 +41,7 @@ function TraceList() {
         q: filters.q || undefined,
         min_duration_ms: filters.minDurationMs ? Number(filters.minDurationMs) : undefined,
         errors_only: filters.errorsOnly || undefined,
-        lookback,
+        ...timeParams,
         limit: filters.limit,
       }),
     refetchInterval: live ? 3_000 : false,
