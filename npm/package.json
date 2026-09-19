@@ -39,5 +39,6 @@
   "engines": {
     "node": ">=18"
   },
-  "homepage": "https://github.com/tsirysndr/otelview#readme"
+  "homepage": "https://github.com/tsirysndr/otelview#readme",
+  "author": "Tsiry Sandratraina <tsiry.sndr@gmail.com>"
 }
