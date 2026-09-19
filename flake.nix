@@ -92,7 +92,7 @@
             # NAR hash of the sandbox-built dist. After UI changes, re-run
             # the nix workflow and paste the "got:" hash from the mismatch
             # error (the local `nix hash path ui/dist` can differ slightly).
-            outputHash = "sha256-8jzYCyn8fjQqZqL7kYMyY8tyTkfuNkag0h6DwYIVouA=";
+            outputHash = "sha256-1ixGbphVTTKLY5VD9C5YgpxfIRTbaQJEeKhlehQAoAo=";
           };
 
           # Keep proto files (tonic codegen inputs) alongside the cargo sources.
