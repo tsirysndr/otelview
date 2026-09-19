@@ -43,42 +43,6 @@ export function TopBar() {
         macDesktop ? "pl-20" : "pl-2"
       }`}
     >
-      <div className="flex items-center gap-0.5">
-        <Tooltip content={rail ? "Hide rail (⌘B)" : "Show rail (⌘B)"} delay={400}>
-          <Button
-            isIconOnly
-            size="sm"
-            variant="light"
-            radius="sm"
-            aria-label="Toggle left rail"
-            className="text-default-500 data-[hover=true]:text-secondary"
-            onPress={() => setRail(!rail)}
-          >
-            {rail ? <IconLayoutSidebarFilled size={18} /> : <IconLayoutSidebar size={18} />}
-          </Button>
-        </Tooltip>
-        <Tooltip
-          content={inspector ? "Hide inspector (⌘J)" : "Show inspector (⌘J)"}
-          delay={400}
-        >
-          <Button
-            isIconOnly
-            size="sm"
-            variant="light"
-            radius="sm"
-            aria-label="Toggle inspector panel"
-            className="text-default-500 data-[hover=true]:text-secondary"
-            onPress={() => setInspector(!inspector)}
-          >
-            {inspector ? (
-              <IconLayoutSidebarRightFilled size={18} />
-            ) : (
-              <IconLayoutSidebarRight size={18} />
-            )}
-          </Button>
-        </Tooltip>
-      </div>
-
       <span
         data-tauri-drag-region
         className="pointer-events-none select-none text-sm font-semibold tracking-widest"
@@ -135,6 +99,39 @@ export function TopBar() {
       >
         <IconRefresh size={16} />
       </Button>
+      <Tooltip content={rail ? "Hide rail (⌘B)" : "Show rail (⌘B)"} delay={400}>
+        <Button
+          isIconOnly
+          size="sm"
+          variant="light"
+          radius="sm"
+          aria-label="Toggle left rail"
+          className="text-default-500 data-[hover=true]:text-secondary"
+          onPress={() => setRail(!rail)}
+        >
+          {rail ? <IconLayoutSidebarFilled size={18} /> : <IconLayoutSidebar size={18} />}
+        </Button>
+      </Tooltip>
+      <Tooltip
+        content={inspector ? "Hide inspector (⌘J)" : "Show inspector (⌘J)"}
+        delay={400}
+      >
+        <Button
+          isIconOnly
+          size="sm"
+          variant="light"
+          radius="sm"
+          aria-label="Toggle inspector panel"
+          className="text-default-500 data-[hover=true]:text-secondary"
+          onPress={() => setInspector(!inspector)}
+        >
+          {inspector ? (
+            <IconLayoutSidebarRightFilled size={18} />
+          ) : (
+            <IconLayoutSidebarRight size={18} />
+          )}
+        </Button>
+      </Tooltip>
       <Button
         isIconOnly
         size="sm"
