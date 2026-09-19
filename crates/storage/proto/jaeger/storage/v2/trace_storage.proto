@@ -1,0 +1,340 @@
+syntax = "proto3";
+
+package jaeger.storage.v2;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+import "opentelemetry/proto/trace/v1/trace.proto";
+import "expression/v1/expression.proto";
+
+option go_package = "storage";
+
+// GetTraceParams represents the query for a single trace from the storage backend.
+message GetTraceParams {
+  // trace_id is a 16 byte array containing the unique identifier for the trace to query.
+  bytes trace_id = 1;
+
+  // start_time is the start of the time interval to search for the trace_id.
+  //
+  // This field is optional.
+  google.protobuf.Timestamp start_time = 2;
+
+  // end_time is the end of the time interval to search for the trace_id.
+  //
+  // This field is optional.
+  google.protobuf.Timestamp end_time = 3;
+}
+
+// GetTracesRequest represents a request to retrieve multiple traces.
+message GetTracesRequest {
+  repeated GetTraceParams query = 1;
+}
+
+// GetServicesRequest represents a request to get service names.
+message GetServicesRequest {}
+
+// GetServicesResponse represents the response for GetServicesRequest.
+message GetServicesResponse {
+  repeated string services = 1;
+}
+
+// GetOperationsRequest represents a request to get operation names.
+message GetOperationsRequest {
+  // service is the name of the service for which to get operation names.
+  //
+  // This field is required.
+  string service = 1;
+
+  // span_kind is the type of span which is used to distinguish between
+  // spans generated in a particular context.
+  //
+  // This field is optional.
+  string span_kind = 2;
+}
+
+// Operation contains information about an operation for a given service.
+message Operation {
+  string name = 1;
+  string span_kind = 2;
+}
+
+// GetOperationsResponse represents the response for GetOperationsRequest.
+message GetOperationsResponse {
+  repeated Operation operations = 1;
+}
+
+// KeyValue and all its associated types are copied from opentelemetry-proto/common/v1/common.proto
+// (https://github.com/open-telemetry/opentelemetry-proto/blob/main/opentelemetry/proto/common/v1/common.proto).
+// This type is used to store attributes in traces.
+message KeyValue {
+  string key = 1;
+  AnyValue value = 2;
+}
+
+message AnyValue {
+  oneof value {
+    string string_value = 1;
+    bool bool_value = 2;
+    int64 int_value = 3;
+    double double_value = 4;
+    ArrayValue array_value = 5;
+    KeyValueList kvlist_value = 6;
+    bytes bytes_value = 7;
+  }
+}
+
+message KeyValueList {
+  repeated KeyValue values = 1;
+}
+
+message ArrayValue {
+  repeated AnyValue values = 1;
+}
+
+// TraceQueryParameters contains query parameters to find traces. For a detailed
+// definition of each field in this message, refer to `TraceQueryParameters` in `jaeger.api_v3`
+// (https://github.com/jaegertracing/jaeger-idl/blob/main/proto/api_v3/query_service.proto).
+message TraceQueryParameters {
+  string service_name = 1;
+  string operation_name = 2;
+  repeated KeyValue attributes = 3;
+  google.protobuf.Timestamp start_time_min = 4;
+  google.protobuf.Timestamp start_time_max = 5;
+  google.protobuf.Duration duration_min = 6;
+  google.protobuf.Duration duration_max = 7;
+  int32 search_depth = 8;
+  // filter is the structured query filter: a single boolean-valued Call.
+  // Mutually exclusive with the legacy predicate fields (service_name,
+  // operation_name, duration_min/max, attributes).
+  //
+  // Experimental. A filter reaches a remote backend only when Jaeger's query service
+  // has the `jaeger.query.structuredFilters` feature gate enabled (Alpha, off by
+  // default) and the backend declares support via SearchCapabilities.filter.
+  jaeger.expression.v1.Call filter = 9;
+
+  // pagination requests a paginated search, see comments for Pagination.
+  // Mutually exclusive with search_depth. When this field is absent the search
+  // returns a single page bounded by search_depth and no continuation token.
+  Pagination pagination = 10;
+}
+
+// Pagination asks for one page of results and, on continuation, says where the
+// previous page stopped. Same shape as jaeger.api_v3.Pagination; duplicated here
+// because jaeger.storage.v2 does not import jaeger.api_v3.
+//
+// A paginated search returns at most page_size results, and when more matches
+// remain the response also carries a next_page_token. Sending that value back as
+// page_token in an otherwise identical request returns the page that follows, so
+// that a caller walking the token chain sees every matching trace exactly once. An
+// empty next_page_token means the search is exhausted.
+//
+// Pagination replaces search_depth rather than refining it: the two are mutually
+// exclusive, and a request that sets both is refused with InvalidArgument.
+//
+// Only FindSpans, FindTraceIDs, and FindTraceSummaries paginate, returning the token on
+// FindTraceIDsResponse and FindTraceSummariesResponse. FindTraces streams
+// opentelemetry.proto.trace.v1.TracesData, an OTLP type with no field to carry a
+// token, so FindTraces is not paginated at all: a FindTraces request that sets
+// pagination is refused with InvalidArgument, and search_depth bounds such a call
+// instead.
+//
+// A backend should only honor a Pagination if it declares
+// SearchCapabilities.paginated. One that does not serves a single page capped at
+// page_size and returns an empty next_page_token even when matches remain, and
+// refuses a request carrying a page_token with InvalidArgument, since it cannot
+// have minted a valid token.
+message Pagination {
+  // page_size bounds the number of results in one page. A Pagination that leaves it
+  // zero does not describe a page and is refused with InvalidArgument.
+  //
+  // This field is required.
+  uint32 page_size = 1;
+
+  // page_token is the next_page_token returned for the preceding page; empty starts
+  // a new search. The value is opaque, and a caller MUST echo back exactly what the
+  // backend returned without inspecting or modifying it. A token is only valid for
+  // the query that produced it.
+  //
+  // This field is optional.
+  string page_token = 2;
+}
+
+
+// SpanQueryParameters contains query parameters to find spans. For a detailed
+// definition of each field, refer to `SpanQueryParameters` in `jaeger.api_v3`
+// (https://github.com/jaegertracing/jaeger-idl/blob/main/proto/api_v3/query_service.proto).
+//
+// Predicates are matched against individual spans, like FindTraces, except
+// the matching spans are the result instead of the traces that contain them.
+message SpanQueryParameters {
+  // The time range, as on TraceQueryParameters. Required — see RFC 0016 §4.3.
+  google.protobuf.Timestamp start_time_min = 1;
+  google.protobuf.Timestamp start_time_max = 2;
+
+  // The predicates (RFC 0005): a single boolean-valued Call.
+  jaeger.expression.v1.Call filter = 3;
+
+  // The page size and cursor (RFC 0014). There is no search_depth: a span search
+  // is bounded by its page size, and the server caps that.
+  Pagination pagination = 4;
+
+  // 5 to 15 are reserved for the result-shaping and aggregation clauses of
+  // RFC 0016 §5: projection, group_by, having, order_by.
+}
+
+// FindSpansRequest represents a request to find spans.
+message FindSpansRequest {
+  SpanQueryParameters query = 1;
+}
+
+// FindSpansResponse is a response chunk for FindSpans. A single RPC call may
+// yield multiple chunks, mirroring the chunked streaming used by GetTraces /
+// FindTraces; next_page_token is meaningful only on the last chunk of the page,
+// where an empty value means the page is the last one (RFC 0014 §4). Earlier
+// chunks leave it unset.
+message FindSpansResponse {
+  // The matching spans.
+  opentelemetry.proto.trace.v1.TracesData spans = 1;
+
+  // 2 is reserved for response-level warnings, which today are written onto a
+  // span for want of anywhere else (RFC 0016 §4.4).
+
+  // The cursor to send as the next request's page_token, or empty when this
+  // page is the last one.
+  string next_page_token = 3;
+}
+
+// FindTracesRequest represents a request to find traces.
+message FindTracesRequest {
+  TraceQueryParameters query = 1;
+}
+
+// FindTraceIDsRequest represents a request to find trace IDs.
+message FindTraceIDsRequest {
+  TraceQueryParameters query = 1;
+}
+
+// FoundTraceID is a wrapper around trace ID returned from FindTraceIDs
+// with an optional time range that may be used in GetTraces calls.
+//
+// The time range is provided as an optimization hint for some storage backends
+// that can perform more efficient queries when they know the approximate time range.
+// The value should not be used for precise time-based filtering or assumptions.
+// It is meant as a rough boundary and may not be populated in all cases.
+message FoundTraceID {
+  bytes trace_id = 1;
+  google.protobuf.Timestamp start = 2;
+  google.protobuf.Timestamp end = 3;
+}
+
+// FindTraceIDsResponse represents the response for FindTraceIDsRequest.
+message FindTraceIDsResponse {
+  repeated FoundTraceID trace_ids = 1;
+
+  // next_page_token is the cursor the caller can send back as Pagination.page_token
+  // to fetch the page after this one, see comments for Pagination. The backend
+  // leaves it empty when this is the last page.
+  string next_page_token = 2;
+}
+
+// ServiceSummary contains per-service statistics for a trace.
+// Mirrors jaeger.api_v3.ServiceSummary but lives in the storage package
+// to avoid a cross-package proto dependency.
+message ServiceSummary {
+  string name             = 1;
+  int32  span_count       = 2;
+  int32  error_span_count = 3;
+}
+
+// TraceSummary contains lightweight summary information about a trace.
+// Mirrors jaeger.api_v3.TraceSummary but uses a 16-byte binary trace ID.
+message TraceSummary {
+  bytes   trace_id                 = 1;  // 16-byte binary trace ID
+  string  root_service_name        = 2;
+  string  root_operation_name      = 3;
+  fixed64 min_start_time_unix_nano = 4;  // Unix nanoseconds; 0 if unknown
+  fixed64 max_end_time_unix_nano   = 5;  // Unix nanoseconds; 0 if unknown
+  int32   span_count               = 6;
+  int32   error_span_count         = 7;
+  int32   orphan_span_count        = 8;
+  repeated ServiceSummary services = 9;
+}
+
+// FindTraceSummariesRequest represents a request to find trace summaries.
+message FindTraceSummariesRequest {
+  TraceQueryParameters query = 1;
+}
+
+// FindTraceSummariesResponse is a response chunk for FindTraceSummaries.
+// Mirrors the chunked streaming contract of GetTraces / FindTraces.
+message FindTraceSummariesResponse {
+  repeated TraceSummary summaries = 1;
+
+  // next_page_token is the cursor the caller can send back as Pagination.page_token
+  // to fetch the page after this one, see comments for Pagination. The backend sets
+  // it only on the final chunk of the stream, and leaves it empty there when
+  // this is the last page.
+  string next_page_token = 2;
+}
+
+// TraceReader is a service that allows reading traces from storage.
+// Note that if you implement this service, you should also implement
+// OTEL's TraceService in package opentelemetry.proto.collector.trace.v1
+// to allow pushing traces to the storage backend
+// (https://github.com/open-telemetry/opentelemetry-proto/blob/main/opentelemetry/proto/collector/trace/v1/trace_service.proto)
+service TraceReader {
+  // GetTraces returns a stream that retrieves all traces with given IDs.
+  //
+  // Chunking requirements:
+  // - A single TracesData chunk MUST NOT contain spans from multiple traces.
+  // - Large traces MAY be split across multiple, *consecutive* TracesData chunks.
+  // - Each returned TracesData object MUST NOT be empty.
+  //
+  // Edge cases:
+  // - If no spans are found for any given trace ID, the ID is ignored.
+  // - If none of the trace IDs are found in the storage, an empty response is returned.
+  rpc GetTraces(GetTracesRequest) returns (stream opentelemetry.proto.trace.v1.TracesData) {}
+
+  // GetServices returns all service names known to the backend from traces
+  // within its retention period.
+  rpc GetServices(GetServicesRequest) returns (GetServicesResponse) {}
+
+  // GetOperations returns all operation names for a given service
+  // known to the backend from traces within its retention period.
+  rpc GetOperations(GetOperationsRequest) returns (GetOperationsResponse) {}
+
+  // FindSpans returns a stream of pages of spans matching the query.
+  //
+  // The yielded FindSpansResponse chunks has a spans field of type TracesData that
+  // may contain spans from multiple traces, unlike GetTraces and FindTraces.
+  //
+  // If no matching spans are found, an empty stream is returned.
+  rpc FindSpans(FindSpansRequest) returns (stream FindSpansResponse) {}
+
+  // FindTraces returns a stream that retrieves traces matching query parameters.
+  //
+  // The chunking rules are the same as for GetTraces.
+  //
+  // If no matching traces are found, an empty stream is returned.
+  rpc FindTraces(FindTracesRequest) returns (stream opentelemetry.proto.trace.v1.TracesData) {}
+
+  // FindTraceIDs returns a stream that retrieves IDs of traces matching query parameters.
+  //
+  // If no matching traces are found, an empty stream is returned.
+  //
+  // This call behaves identically to FindTraces, except that it returns only the list
+  // of matching trace IDs. This is useful in some contexts, such as batch jobs, where a
+  // large list of trace IDs may be queried first and then the full traces are loaded
+  // in batches.
+  rpc FindTraceIDs(FindTraceIDsRequest) returns (FindTraceIDsResponse) {}
+
+  // FindTraceSummaries is an optional streaming RPC that returns lightweight
+  // summary information for traces matching the given query.
+  //
+  // If a remote storage backend does not implement this method, it MUST return
+  // gRPC status UNIMPLEMENTED so that the caller can fall back to FindTraces +
+  // client-side aggregation. The auto-generated UnimplementedTraceReaderServer
+  // embedding already provides this behaviour for backends that do not override
+  // the method.
+  rpc FindTraceSummaries(FindTraceSummariesRequest) returns (stream FindTraceSummariesResponse) {}
+}

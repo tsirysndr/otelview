@@ -1,0 +1,124 @@
+// otelview remote-storage API for logs and metrics.
+//
+// Modeled on the Jaeger v2 remote-storage API (jaeger.storage.v2): reads are
+// dedicated reader services streaming standard OTLP payloads, writes reuse the
+// OTLP collector Export services (opentelemetry.proto.collector.logs.v1 and
+// opentelemetry.proto.collector.metrics.v1). A backend implementing this file
+// plus jaeger.storage.v2.TraceReader (and the OTLP collector services) is a
+// complete remote storage for all three signals — every otelview instance
+// serves all of them on its OTLP gRPC port.
+
+syntax = "proto3";
+
+package otelview.storage.v1;
+
+import "google/protobuf/timestamp.proto";
+import "opentelemetry/proto/logs/v1/logs.proto";
+import "opentelemetry/proto/metrics/v1/metrics.proto";
+
+message GetServicesRequest {}
+
+message GetServicesResponse {
+  repeated string services = 1;
+}
+
+// LogQueryParameters mirrors the shape of jaeger.storage.v2.TraceQueryParameters.
+message LogQueryParameters {
+  // Exact match on resource service.name; empty matches all services.
+  string service_name = 1;
+
+  // Minimum OTLP severity number (inclusive), 0 for no filter.
+  int32 min_severity = 2;
+
+  // Case-insensitive substring match over body, attributes and severity text.
+  string search = 3;
+
+  // Hex-encoded trace id; empty for no correlation filter.
+  string trace_id = 4;
+
+  google.protobuf.Timestamp time_min = 5;
+  google.protobuf.Timestamp time_max = 6;
+
+  // Maximum number of log records to return, newest first. 0 means a
+  // backend-chosen default.
+  int32 search_depth = 7;
+}
+
+message FindLogsRequest {
+  LogQueryParameters query = 1;
+}
+
+// LogReader is the read side for logs, the analogue of
+// jaeger.storage.v2.TraceReader. Writes go through OTLP
+// opentelemetry.proto.collector.logs.v1.LogsService/Export.
+service LogReader {
+  // GetServices returns service names known from stored logs.
+  rpc GetServices(GetServicesRequest) returns (GetServicesResponse) {}
+
+  // FindLogs streams matching log records as OTLP LogsData chunks,
+  // newest first. Chunks MUST NOT be empty.
+  rpc FindLogs(FindLogsRequest) returns (stream opentelemetry.proto.logs.v1.LogsData) {}
+}
+
+message ListMetricsRequest {}
+
+message MetricInfo {
+  string name = 1;
+  string description = 2;
+  string unit = 3;
+  // gauge | sum | histogram | exponential_histogram | summary
+  string metric_type = 4;
+  repeated string services = 5;
+}
+
+message ListMetricsResponse {
+  repeated MetricInfo metrics = 1;
+}
+
+message MetricQueryParameters {
+  // Exact metric name. Required.
+  string metric_name = 1;
+
+  // Exact match on resource service.name; empty matches all services.
+  string service_name = 2;
+
+  google.protobuf.Timestamp time_min = 3;
+  google.protobuf.Timestamp time_max = 4;
+
+  // Maximum data points per series; backends downsample beyond this.
+  // 0 means a backend-chosen default.
+  int32 max_points = 5;
+}
+
+message FindMetricsRequest {
+  MetricQueryParameters query = 1;
+}
+
+// MetricReader is the read side for metrics. Writes go through OTLP
+// opentelemetry.proto.collector.metrics.v1.MetricsService/Export.
+service MetricReader {
+  // GetServices returns service names known from stored metrics.
+  rpc GetServices(GetServicesRequest) returns (GetServicesResponse) {}
+
+  // ListMetrics returns one descriptor per known metric name.
+  rpc ListMetrics(ListMetricsRequest) returns (ListMetricsResponse) {}
+
+  // FindMetrics streams matching data points as OTLP MetricsData chunks in
+  // time order. Chunks MUST NOT be empty.
+  rpc FindMetrics(FindMetricsRequest) returns (stream opentelemetry.proto.metrics.v1.MetricsData) {}
+}
+
+message GetStatsRequest {}
+
+message GetStatsResponse {
+  uint64 spans = 1;
+  uint64 logs = 2;
+  uint64 metric_points = 3;
+  uint64 services = 4;
+  string backend = 5;
+}
+
+// Diagnostics exposes storage counters (used for the otelview status line).
+service Diagnostics {
+  rpc GetStats(GetStatsRequest) returns (GetStatsResponse) {}
+}
