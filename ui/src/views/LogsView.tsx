@@ -14,7 +14,6 @@ import { api, type LogRecord } from "../lib/api";
 import { bodyPreview, fmtTime, severityInfo } from "../lib/format";
 import { EmptyState } from "../components/EmptyState";
 import { Field } from "../components/Field";
-import { TimeRangePicker } from "../components/TimeRangePicker";
 import { FilterSelect } from "../components/FilterSelect";
 import { ServiceChip } from "../components/ServiceChip";
 
@@ -83,9 +82,6 @@ export function LogsView() {
           onValueChange={(search) => setFilters({ ...filters, search })}
           startContent={<IconSearch size={14} className="mr-1 shrink-0 text-default-400" />}
         />
-        </Field>
-        <Field label="time range">
-          <TimeRangePicker align="left" />
         </Field>
         <span className="pb-2 text-[11px] text-default-500">
           {logs.length} records{live ? " · tailing" : ""}
