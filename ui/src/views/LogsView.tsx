@@ -86,7 +86,7 @@ export function LogsView() {
           placeholder="body, attributes…"
           value={filters.search}
           onValueChange={(search) => setFilters({ ...filters, search })}
-          startContent={<IconSearch size={14} className="text-default-400" />}
+          startContent={<IconSearch size={14} className="mr-1 shrink-0 text-default-400" />}
         />
         </Field>
         <span className="pb-2 text-[11px] text-default-500">

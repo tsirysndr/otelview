@@ -93,7 +93,7 @@ function TraceList() {
           placeholder="key=value or text"
           value={filters.q}
           onValueChange={(q) => setFilters({ ...filters, q })}
-          startContent={<IconSearch size={14} className="text-default-400" />}
+          startContent={<IconSearch size={14} className="mr-1 shrink-0 text-default-400" />}
         />
         </Field>
         <Field label="min duration" className="w-32">
