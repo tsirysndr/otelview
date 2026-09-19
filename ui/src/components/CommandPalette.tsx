@@ -19,6 +19,7 @@ import {
 import {
   helpOpenAtom,
   inspectorOpenAtom,
+  selectedLogAtom,
   liveAtom,
   logFiltersAtom,
   lookbackAtom,
@@ -33,7 +34,7 @@ import {
 } from "../state/atoms";
 import { api } from "../lib/api";
 import { plainTextField } from "../lib/inputProps";
-import { fmtAgo, fmtDuration } from "../lib/format";
+import { bodyPreview, fmtAgo, fmtDuration, severityInfo } from "../lib/format";
 import { serviceColor } from "../lib/colors";
 
 // Raycast-style global search ("/" or ⌘K): fuzzy commands + live search over
@@ -53,6 +54,7 @@ export function CommandPalette() {
   const [traceFilters, setTraceFilters] = useAtom(traceFiltersAtom);
   const [logFilters, setLogFilters] = useAtom(logFiltersAtom);
   const setSelectedMetric = useSetAtom(selectedMetricAtom);
+  const setSelectedLog = useSetAtom(selectedLogAtom);
   const setLookback = useSetAtom(lookbackAtom);
   const qc = useQueryClient();
 
@@ -81,6 +83,11 @@ export function CommandPalette() {
     queryKey: ["palette-traces", q],
     queryFn: () => api.traces({ q, limit: 6, lookback: "all" }),
     enabled: open && q.length >= 2 && !/^[0-9a-f]{16,32}$/.test(q),
+  });
+  const { data: logHits = [] } = useQuery({
+    queryKey: ["palette-logs", q],
+    queryFn: () => api.logs({ search: q, limit: 5, lookback: "all" }),
+    enabled: open && q.length >= 2,
   });
   const looksLikeTraceId = /^[0-9a-f]{16,32}$/i.test(q);
 
@@ -163,23 +170,54 @@ export function CommandPalette() {
             </Command.Group>
           )}
 
-          {q.length >= 1 && (
+          {(q.length >= 1 || logHits.length > 0) && (
             <Command.Group heading="Logs" className={GROUP}>
-              <Command.Item
-                value={`search-logs ${q}`}
-                onSelect={() =>
-                  run(() => {
-                    setView("logs");
-                    setLogFilters({ ...logFilters, search: q });
-                  })
-                }
-                className={ITEM}
-              >
-                <span className="text-warning">
-                  <IconAlignLeft size={16} />
-                </span>
-                search logs for “{q}”
-              </Command.Item>
+              {logHits.map((l, i) => {
+                const sev = severityInfo(l.severity_number, l.severity_text);
+                return (
+                  <Command.Item
+                    key={`${l.time_unix_nano}-${i}`}
+                    value={`log ${bodyPreview(l.body)} ${l.service_name} ${i}`}
+                    onSelect={() =>
+                      run(() => {
+                        setView("logs");
+                        setLogFilters({ ...logFilters, search: q });
+                        setSelectedLog(l);
+                        setInspector(true);
+                      })
+                    }
+                    className={ITEM}
+                  >
+                    <span
+                      className="inline-block h-2 w-2 shrink-0 rounded-full"
+                      style={{ background: sev.dot }}
+                    />
+                    <span className="min-w-0 flex-1 truncate">
+                      {bodyPreview(l.body)}
+                    </span>
+                    <span className="shrink-0 text-[11px] text-default-400">
+                      {l.service_name} · {fmtAgo(l.time_unix_nano)}
+                    </span>
+                  </Command.Item>
+                );
+              })}
+              {q.length >= 1 && (
+                <Command.Item
+                  value={`search-logs ${q}`}
+                  onSelect={() =>
+                    run(() => {
+                      setView("logs");
+                      setLogFilters({ ...logFilters, search: q });
+                    })
+                  }
+                  className={ITEM}
+                >
+                  <span className="text-warning">
+                    <IconAlignLeft size={16} />
+                  </span>
+                  search logs for “{q}”
+                </Command.Item>
+              )}
             </Command.Group>
           )}
 
@@ -259,6 +297,39 @@ export function CommandPalette() {
             </Item>
             <Item icon={<IconAlignLeft size={16} />} onSelect={() => run(() => setView("logs"))}>
               Logs
+            </Item>
+            <Item
+              icon={<IconAlignLeft size={16} />}
+              onSelect={() =>
+                run(() => {
+                  setView("logs");
+                  setLogFilters({ ...logFilters, minSeverity: 17, search: "" });
+                })
+              }
+            >
+              Logs: errors only
+            </Item>
+            <Item
+              icon={<IconAlignLeft size={16} />}
+              onSelect={() =>
+                run(() => {
+                  setView("logs");
+                  setLogFilters({ ...logFilters, minSeverity: 13, search: "" });
+                })
+              }
+            >
+              Logs: warnings and above
+            </Item>
+            <Item
+              icon={<IconAlignLeft size={16} />}
+              onSelect={() =>
+                run(() => {
+                  setView("logs");
+                  setLogFilters({ ...logFilters, minSeverity: 0, search: "" });
+                })
+              }
+            >
+              Logs: all levels
             </Item>
             <Item icon={<IconChartLine size={16} />} onSelect={() => run(() => setView("metrics"))}>
               Metrics
