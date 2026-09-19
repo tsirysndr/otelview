@@ -8,3 +8,4 @@ ui/src-tauri/target/
 ui/src-tauri/gen/
 *.duckdb
 *.log
+*.duckdb.wal
