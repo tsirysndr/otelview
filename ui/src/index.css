@@ -81,3 +81,10 @@ kbd.neon-key {
   background: rgba(255, 42, 109, 0.14);
   box-shadow: inset 2px 0 0 #ff2a6d;
 }
+
+/* Focused fields never go white: keep the border in the muted purple ramp
+   (overrides HeroUI's default-foreground focus border). */
+[data-slot="input-wrapper"][data-focus="true"],
+[data-slot="input-wrapper"][data-focus-visible="true"] {
+  border-color: hsl(var(--heroui-default-500)) !important;
+}
