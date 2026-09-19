@@ -3,6 +3,7 @@ import { IconExternalLink, IconX } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import {
+  inspectorOpenAtom,
   openTraceIdAtom,
   selectedLogAtom,
   selectedSpanIdAtom,
@@ -164,6 +165,7 @@ function LogDetails() {
 /** Right-hand detail panel (VS Code secondary sidebar). */
 export function Inspector() {
   const view = useAtomValue(viewAtom);
+  const inspectorOpen = useAtomValue(inspectorOpenAtom);
   const openTraceId = useAtomValue(openTraceIdAtom);
   const [selectedSpanId, setSelectedSpanId] = useAtom(selectedSpanIdAtom);
   const [selectedLog, setSelectedLog] = useAtom(selectedLogAtom);
@@ -180,7 +182,7 @@ export function Inspector() {
       : undefined;
   const showLog = view === "logs" && selectedLog;
 
-  if (!span && !showLog) return null;
+  if (!inspectorOpen || (!span && !showLog)) return null;
 
   return (
     <aside className="flex w-[360px] shrink-0 flex-col border-l border-divider bg-content1">

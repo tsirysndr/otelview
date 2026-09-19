@@ -63,3 +63,64 @@ jobs:
             ${{ env.ASSET }}
             ${{ env.ASSET }}.sha256
           generate_release_notes: true
+
+  desktop:
+    name: desktop ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            platform: macos-arm64
+            bundles: dmg
+          - os: ubuntu-24.04
+            platform: linux-x86_64
+            bundles: appimage,deb
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Linux webkit deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl \
+            wget file libxdo-dev libssl-dev libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      - name: Install UI deps
+        working-directory: ui
+        run: npm ci
+
+      - name: Build desktop app (ad-hoc signed on macOS)
+        working-directory: ui
+        env:
+          # "-" = macOS ad-hoc signature: no Apple developer certificate
+          # needed; users bypass Gatekeeper with right-click → Open.
+          APPLE_SIGNING_IDENTITY: "-"
+        run: npm run tauri build -- --bundles ${{ matrix.bundles }}
+
+      - name: Collect artifacts
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          mkdir -p out
+          BUNDLE=ui/src-tauri/target/release/bundle
+          if [ "${{ matrix.platform }}" = "macos-arm64" ]; then
+            cp "$BUNDLE"/dmg/*.dmg "out/otelview-desktop-${TAG}-macos-arm64.dmg"
+          else
+            cp "$BUNDLE"/appimage/*.AppImage "out/otelview-desktop-${TAG}-linux-x86_64.AppImage"
+            cp "$BUNDLE"/deb/*.deb "out/otelview-desktop-${TAG}-linux-x86_64.deb"
+          fi
+          (cd out && shasum -a 256 * > SHA256SUMS-desktop-${{ matrix.platform }}.txt)
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: out/*
+          generate_release_notes: true

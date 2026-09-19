@@ -1,8 +1,15 @@
 import { Input, Select, SelectItem } from "@heroui/react";
 import { IconSearch } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
-import { useAtom, useAtomValue } from "jotai";
-import { liveAtom, logFiltersAtom, lookbackAtom, selectedLogAtom } from "../state/atoms";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
+import {
+  inspectorOpenAtom,
+  liveAtom,
+  logFiltersAtom,
+  lookbackAtom,
+  selectedLogAtom,
+} from "../state/atoms";
+import { fieldProps, plainTextField } from "../lib/inputProps";
 import { api, type LogRecord } from "../lib/api";
 import { bodyPreview, fmtTime, severityInfo } from "../lib/format";
 import { ServiceChip } from "../components/ServiceChip";
@@ -24,6 +31,7 @@ export function LogsView() {
   const lookback = useAtomValue(lookbackAtom);
   const live = useAtomValue(liveAtom);
   const [selectedLog, setSelectedLog] = useAtom(selectedLogAtom);
+  const setInspectorOpen = useSetAtom(inspectorOpenAtom);
 
   const { data: services = [] } = useQuery({ queryKey: ["services"], queryFn: api.services });
   const { data: logs = [], isLoading } = useQuery({
@@ -43,8 +51,9 @@ export function LogsView() {
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 flex-wrap items-end gap-2 border-b border-divider bg-content1 p-2">
         <Select
-          size="sm"
+          {...fieldProps}
           label="Service"
+          placeholder="all services"
           className="w-44"
           selectedKeys={filters.service ? [filters.service] : []}
           onSelectionChange={(keys) =>
@@ -55,8 +64,9 @@ export function LogsView() {
           {(item) => <SelectItem key={item.key}>{item.label}</SelectItem>}
         </Select>
         <Select
-          size="sm"
+          {...fieldProps}
           label="Severity"
+          placeholder="all levels"
           className="w-36"
           selectedKeys={[String(filters.minSeverity)]}
           onSelectionChange={(keys) =>
@@ -67,7 +77,8 @@ export function LogsView() {
           {(item) => <SelectItem key={item.key}>{item.label}</SelectItem>}
         </Select>
         <Input
-          size="sm"
+          {...plainTextField}
+          {...fieldProps}
           label="Search"
           placeholder="body, attributes…"
           className="w-72"
@@ -100,7 +111,10 @@ export function LogsView() {
           return (
             <button
               key={logKey(l, i)}
-              onClick={() => setSelectedLog(l)}
+              onClick={() => {
+                setSelectedLog(l);
+                setInspectorOpen(true);
+              }}
               className={`flex w-full items-center gap-2 border-b border-divider/40 px-3 py-1 text-left transition-colors hover:bg-content2 ${
                 selected ? "bg-content2 shadow-[inset_2px_0_0_#FF2A6D]" : ""
               }`}

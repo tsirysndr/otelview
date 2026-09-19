@@ -9,6 +9,7 @@ import {
   selectedSpanIdAtom,
   traceFiltersAtom,
 } from "../state/atoms";
+import { fieldProps, plainTextField } from "../lib/inputProps";
 import { api } from "../lib/api";
 import { fmtAgo, fmtDuration } from "../lib/format";
 import { serviceColor } from "../lib/colors";
@@ -56,8 +57,9 @@ function TraceList() {
       {/* filter bar */}
       <div className="flex shrink-0 flex-wrap items-end gap-2 border-b border-divider bg-content1 p-2">
         <Select
-          size="sm"
+          {...fieldProps}
           label="Service"
+          placeholder="all services"
           className="w-44"
           selectedKeys={filters.service ? [filters.service] : []}
           onSelectionChange={(keys) =>
@@ -68,8 +70,9 @@ function TraceList() {
           {(item) => <SelectItem key={item.key}>{item.label}</SelectItem>}
         </Select>
         <Select
-          size="sm"
+          {...fieldProps}
           label="Operation"
+          placeholder="all operations"
           className="w-52"
           selectedKeys={filters.operation ? [filters.operation] : []}
           onSelectionChange={(keys) =>
@@ -80,7 +83,8 @@ function TraceList() {
           {(item) => <SelectItem key={item.key}>{item.label}</SelectItem>}
         </Select>
         <Input
-          size="sm"
+          {...plainTextField}
+          {...fieldProps}
           label="Attributes"
           placeholder="key=value or substring"
           className="w-56"
@@ -89,7 +93,8 @@ function TraceList() {
           startContent={<IconSearch size={14} className="text-default-400" />}
         />
         <Input
-          size="sm"
+          {...plainTextField}
+          {...fieldProps}
           label="Min duration (ms)"
           placeholder="e.g. 250"
           className="w-36"

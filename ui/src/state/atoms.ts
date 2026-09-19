@@ -14,8 +14,14 @@ export const openTraceIdAtom = atom<string | null>(null);
 export const selectedSpanIdAtom = atom<string | null>(null);
 /** Log record selected → shown in the right inspector. */
 export const selectedLogAtom = atom<LogRecord | null>(null);
-/** Right inspector visibility. */
+/** Right inspector visibility (selecting a span/log re-opens it). */
 export const inspectorOpenAtom = atom<boolean>(true);
+/** Left icon rail visibility (⌘B). */
+export const railVisibleAtom = atom<boolean>(true);
+/** Raycast-style command palette ("/" or ⌘K). */
+export const paletteOpenAtom = atom<boolean>(false);
+/** Keyboard shortcuts help ("?"). */
+export const helpOpenAtom = atom<boolean>(false);
 
 /** API connection settings — used by the Tauri desktop build and remote
  * deployments; empty baseUrl = same origin. */

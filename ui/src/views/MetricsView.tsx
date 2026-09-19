@@ -9,6 +9,7 @@ import {
 } from "../state/atoms";
 import { api } from "../lib/api";
 import { LineChart, type ChartSeries } from "../components/LineChart";
+import { fieldProps } from "../lib/inputProps";
 
 const TYPE_COLORS: Record<string, "secondary" | "primary" | "warning" | "success" | "default"> = {
   gauge: "secondary",
@@ -105,8 +106,9 @@ export function MetricsView() {
               </div>
               <div className="ml-auto w-44">
                 <Select
-                  size="sm"
+                  {...fieldProps}
                   label="Service"
+                  placeholder="all services"
                   selectedKeys={service ? [service] : []}
                   onSelectionChange={(keys) =>
                     setService((Array.from(keys)[0] as string) ?? "")

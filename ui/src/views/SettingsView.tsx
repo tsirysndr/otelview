@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { apiSettingsAtom } from "../state/atoms";
 import { setApiConfig } from "../lib/api";
+import { plainTextField } from "../lib/inputProps";
 
 /** API connection settings — mainly for the Tauri desktop app, which points
  * at a remote otelview server; the web build defaults to same-origin. */
@@ -51,12 +52,18 @@ export function SettingsView() {
         </p>
       </div>
       <Input
+        {...plainTextField}
+        variant="bordered"
+        radius="sm"
         label="API base URL"
         placeholder="http://127.0.0.1:4319 (empty = same origin)"
         value={baseUrl}
         onValueChange={setBaseUrl}
       />
       <Input
+        {...plainTextField}
+        variant="bordered"
+        radius="sm"
         label="API token"
         placeholder="only if auth.protect_api is enabled"
         type="password"

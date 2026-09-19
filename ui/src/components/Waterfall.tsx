@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { IconChevronDown, IconChevronRight, IconAlertTriangle } from "@tabler/icons-react";
-import { useAtom } from "jotai";
-import { selectedSpanIdAtom } from "../state/atoms";
+import { useAtom, useSetAtom } from "jotai";
+import { inspectorOpenAtom, selectedSpanIdAtom } from "../state/atoms";
 import type { SpanRecord } from "../lib/api";
 import { serviceColor } from "../lib/colors";
 import { fmtDuration } from "../lib/format";
@@ -39,6 +39,7 @@ function buildTree(spans: SpanRecord[]): Node[] {
 
 export function Waterfall({ spans }: { spans: SpanRecord[] }) {
   const [selectedSpanId, setSelectedSpanId] = useAtom(selectedSpanIdAtom);
+  const setInspectorOpen = useSetAtom(inspectorOpenAtom);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
   const roots = useMemo(() => buildTree(spans), [spans]);
@@ -106,7 +107,10 @@ export function Waterfall({ spans }: { spans: SpanRecord[] }) {
               key={s.span_id}
               data-selected={selectedSpanId === s.span_id}
               className="span-row flex h-7 cursor-pointer items-center border-b border-divider/40"
-              onClick={() => setSelectedSpanId(s.span_id)}
+              onClick={() => {
+                setSelectedSpanId(s.span_id);
+                setInspectorOpen(true);
+              }}
             >
               <div
                 className="flex h-full shrink-0 items-center gap-1 overflow-hidden border-r border-divider pr-1"
