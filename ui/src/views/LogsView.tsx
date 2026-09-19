@@ -1,5 +1,5 @@
 import { Input } from "@heroui/react";
-import { IconSearch } from "@tabler/icons-react";
+import { IconAlignLeft, IconSearch } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import {
@@ -12,6 +12,7 @@ import { useTimeParams } from "../hooks/useTimeParams";
 import { fieldProps, plainTextField } from "../lib/inputProps";
 import { api, type LogRecord } from "../lib/api";
 import { bodyPreview, fmtTime, severityInfo } from "../lib/format";
+import { EmptyState } from "../components/EmptyState";
 import { Field } from "../components/Field";
 import { FilterSelect } from "../components/FilterSelect";
 import { ServiceChip } from "../components/ServiceChip";
@@ -90,12 +91,11 @@ export function LogsView() {
       <div className="min-h-0 flex-1 overflow-y-auto font-mono">
         {isLoading && <p className="p-4 text-sm text-default-500">loading…</p>}
         {!isLoading && logs.length === 0 && (
-          <div className="flex h-full flex-col items-center justify-center gap-2 text-default-500">
-            <p className="text-sm">no log records</p>
-            <p className="text-xs">
-              send OTLP to <span className="text-neon-cyan">http :4318/v1/logs</span>
-            </p>
-          </div>
+          <EmptyState
+            icon={<IconAlignLeft size={44} stroke={1.2} />}
+            title="no log records yet"
+            hint="Nothing matches the current filters and time range — or no logs have been received."
+          />
         )}
         {logs.map((l, i) => {
           const sev = severityInfo(l.severity_number, l.severity_text);

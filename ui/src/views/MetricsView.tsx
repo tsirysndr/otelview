@@ -8,7 +8,9 @@ import {
 } from "../state/atoms";
 import { useTimeParams } from "../hooks/useTimeParams";
 import { api } from "../lib/api";
+import { IconChartLine } from "@tabler/icons-react";
 import { LineChart, type ChartSeries } from "../components/LineChart";
+import { EmptyState } from "../components/EmptyState";
 import { Field } from "../components/Field";
 import { FilterSelect } from "../components/FilterSelect";
 
@@ -56,6 +58,16 @@ export function MetricsView() {
     points: s.points.map((p) => ({ t: p.time_unix_nano, v: p.value })),
   }));
 
+  if (!isLoading && metrics.length === 0) {
+    return (
+      <EmptyState
+        icon={<IconChartLine size={44} stroke={1.2} />}
+        title="no metrics yet"
+        hint="No metric points have been received in this instance."
+      />
+    );
+  }
+
   return (
     <div className="flex h-full min-h-0">
       {/* metric list */}
@@ -65,11 +77,6 @@ export function MetricsView() {
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto">
           {isLoading && <p className="p-3 text-xs text-default-500">loading…</p>}
-          {!isLoading && metrics.length === 0 && (
-            <p className="p-3 text-xs text-default-500">
-              no metrics — send OTLP to :4318/v1/metrics
-            </p>
-          )}
           {metrics.map((m) => (
             <button
               key={m.name}

@@ -1,5 +1,5 @@
 import { Button, Chip, Input, Switch } from "@heroui/react";
-import { IconArrowLeft, IconSearch } from "@tabler/icons-react";
+import { IconArrowLeft, IconRoute, IconSearch } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import {
@@ -13,6 +13,7 @@ import { useTimeParams } from "../hooks/useTimeParams";
 import { api } from "../lib/api";
 import { fmtAgo, fmtDuration } from "../lib/format";
 import { serviceNeon } from "../lib/colors";
+import { EmptyState } from "../components/EmptyState";
 import { Field } from "../components/Field";
 import { FilterSelect } from "../components/FilterSelect";
 import { ScatterPlot } from "../components/ScatterPlot";
@@ -124,13 +125,11 @@ function TraceList() {
       <div className="min-h-0 flex-1 overflow-y-auto">
         {isLoading && <p className="p-4 text-sm text-default-500">searching…</p>}
         {!isLoading && traces.length === 0 && (
-          <div className="flex h-full flex-col items-center justify-center gap-2 text-default-500">
-            <p className="text-sm">no traces found</p>
-            <p className="text-xs">
-              send OTLP to <span className="text-neon-cyan">grpc :4317</span> or{" "}
-              <span className="text-neon-cyan">http :4318/v1/traces</span>
-            </p>
-          </div>
+          <EmptyState
+            icon={<IconRoute size={44} stroke={1.2} />}
+            title="no traces yet"
+            hint="Nothing matches the current filters and time range — or no spans have been received."
+          />
         )}
         {traces.map((t) => (
           <button
