@@ -1,0 +1,65 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            target: aarch64-apple-darwin
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build web UI
+        working-directory: ui
+        run: |
+          npm ci
+          npm run build
+
+      - name: Fetch pre-built static libduckdb
+        run: ./scripts/fetch-duckdb.sh
+
+      - name: Build otelview
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Package
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          ASSET="otelview-${TAG}-${{ matrix.target }}.tar.gz"
+          tar -czf "$ASSET" -C "target/${{ matrix.target }}/release" otelview
+          shasum -a 256 "$ASSET" > "$ASSET.sha256"
+          echo "ASSET=$ASSET" >> "$GITHUB_ENV"
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ${{ env.ASSET }}
+            ${{ env.ASSET }}.sha256
+          generate_release_notes: true

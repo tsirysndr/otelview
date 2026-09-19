@@ -1,0 +1,51 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  rust:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Build web UI (embedded by the api crate)
+        working-directory: ui
+        run: |
+          npm ci
+          npm run build
+      - name: Fetch pre-built static libduckdb
+        run: ./scripts/fetch-duckdb.sh
+      - name: Tests
+        run: cargo test --release
+      - name: Clippy
+        run: cargo clippy --release -- -D warnings
+
+  ui:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install
+        working-directory: ui
+        run: npm ci
+      - name: Typecheck + build
+        working-directory: ui
+        run: npm run build
+      - name: Tests (vitest + testing-library + msw)
+        working-directory: ui
+        run: npm test
+      - name: Storybook build
+        working-directory: ui
+        run: npm run build-storybook
