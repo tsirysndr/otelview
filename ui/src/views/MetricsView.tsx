@@ -3,6 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useAtom, useAtomValue } from "jotai";
 import {
   liveAtom,
+  metricAggAtom,
+  metricFuncAtom,
   metricServiceAtom,
   selectedMetricAtom,
 } from "../state/atoms";
@@ -30,6 +32,8 @@ function seriesLabel(service: string, attrs: Record<string, unknown>): string {
 export function MetricsView() {
   const [selected, setSelected] = useAtom(selectedMetricAtom);
   const [service, setService] = useAtom(metricServiceAtom);
+  const [func, setFunc] = useAtom(metricFuncAtom);
+  const [agg, setAgg] = useAtom(metricAggAtom);
   const timeParams = useTimeParams();
   const live = useAtomValue(liveAtom);
 
@@ -44,12 +48,23 @@ export function MetricsView() {
   const activeInfo = metrics.find((m) => m.name === active);
 
   const { data: series = [] } = useQuery({
-    queryKey: ["series", active, service, timeParams],
+    queryKey: ["series", active, service, func, agg, timeParams],
     queryFn: () =>
-      api.metricSeries({ name: active!, service: service || undefined, ...timeParams }),
+      api.metricSeries({
+        name: active!,
+        service: service || undefined,
+        func: func !== "raw" ? func : undefined,
+        agg: agg !== "none" ? agg : undefined,
+        ...timeParams,
+      }),
     enabled: !!active,
     refetchInterval: live ? 5_000 : false,
   });
+
+  const unitLabel =
+    func === "rate"
+      ? `${activeInfo?.unit ?? ""}/s`.replace(/^\/s$/, "1/s")
+      : activeInfo?.unit;
 
   // Fixed-order color assignment; >6 series fold into "Other" gray but stay
   // individually plotted and labeled.
@@ -113,7 +128,33 @@ export function MetricsView() {
                   <p className="truncate text-xs text-default-500">{activeInfo.description}</p>
                 )}
               </div>
-              <Field label="service" className="ml-auto w-44">
+              <Field label="function" className="ml-auto w-32">
+                <FilterSelect
+                  ariaLabel="Series function"
+                  value={func}
+                  onChange={setFunc}
+                  options={[
+                    { value: "raw", label: "raw" },
+                    { value: "rate", label: "rate /s" },
+                    { value: "increase", label: "increase" },
+                  ]}
+                />
+              </Field>
+              <Field label="aggregate" className="w-32">
+                <FilterSelect
+                  ariaLabel="Cross-series aggregation"
+                  value={agg}
+                  onChange={setAgg}
+                  options={[
+                    { value: "none", label: "per series" },
+                    { value: "sum", label: "sum" },
+                    { value: "avg", label: "avg" },
+                    { value: "min", label: "min" },
+                    { value: "max", label: "max" },
+                  ]}
+                />
+              </Field>
+              <Field label="service" className="w-44">
                 <FilterSelect
                   ariaLabel="Service"
                   value={service}
@@ -129,7 +170,7 @@ export function MetricsView() {
               {chartSeries.length === 0 ? (
                 <p className="text-sm text-default-500">no data points in this window</p>
               ) : (
-                <LineChart series={chartSeries} unit={activeInfo.unit} height={320} />
+                <LineChart series={chartSeries} unit={unitLabel} height={320} />
               )}
               {activeInfo.metric_type === "histogram" && (
                 <p className="mt-2 text-[11px] text-default-500">

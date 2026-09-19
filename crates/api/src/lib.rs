@@ -19,6 +19,8 @@ use serde::Deserialize;
 use tower_http::cors::CorsLayer;
 
 pub mod analytics;
+pub mod kql;
+pub mod seriesfns;
 
 #[derive(RustEmbed)]
 #[folder = "../../ui/dist"]
@@ -59,6 +61,7 @@ pub fn router(cfg: &Config, storage: DynStorage) -> Router {
         .route("/services/stats", get(service_stats_handler))
         .route("/service-graph", get(service_graph_handler))
         .route("/logs/histogram", get(log_histogram_handler))
+        .route("/logs/fields", get(log_fields_handler))
         .route("/config", get(config_view))
         .with_state(state.clone());
     if cfg.ui.auth_enabled() || (cfg.auth.enabled() && cfg.auth.protect_api) {
@@ -217,6 +220,8 @@ struct LogParams {
     service: Option<String>,
     min_severity: Option<i32>,
     search: Option<String>,
+    /// KQL query, e.g. `http.method:POST and status_code:>=500`.
+    kql: Option<String>,
     trace_id: Option<String>,
     lookback: Option<String>,
     /// Absolute range (unix millis); overrides lookback when set.
@@ -233,6 +238,17 @@ async fn logs(State(state): State<ApiState>, Query(p): Query<LogParams>) -> Resp
             .map(|window| now_unix_nanos().saturating_sub(window))
     });
     let time_max_unix_nano = p.end_ms.map(|ms| ms * 1_000_000);
+    let kql_expr = match p.kql.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        Some(q) => match kql::parse(q) {
+            Ok(expr) => expr,
+            Err(e) => {
+                return (StatusCode::BAD_REQUEST, format!("invalid KQL query: {e}"))
+                    .into_response()
+            }
+        },
+        None => None,
+    };
+    let limit = p.limit.unwrap_or(200).clamp(1, 5000);
     let q = LogQuery {
         service: p.service.filter(|s| !s.is_empty()),
         min_severity: p.min_severity.filter(|s| *s > 0),
@@ -240,12 +256,99 @@ async fn logs(State(state): State<ApiState>, Query(p): Query<LogParams>) -> Resp
         trace_id: p.trace_id.filter(|s| !s.is_empty()),
         time_min_unix_nano,
         time_max_unix_nano,
-        limit: p.limit.unwrap_or(200).clamp(1, 5000),
+        // With a KQL filter, over-fetch and filter down to the limit.
+        limit: if kql_expr.is_some() { 5000 } else { limit },
     };
     match state.storage.query_logs(q).await {
-        Ok(l) => Json(l).into_response(),
+        Ok(mut l) => {
+            if let Some(expr) = kql_expr {
+                l.retain(|log| kql::eval(&expr, log));
+                l.truncate(limit);
+            }
+            Json(l).into_response()
+        }
         Err(e) => internal(e),
     }
+}
+
+#[derive(serde::Serialize)]
+struct FieldInfo {
+    name: String,
+    count: u64,
+    top_values: Vec<(String, u64)>,
+}
+
+/// Kibana-style field discovery: flattened attribute keys with counts and
+/// top values, from a sample of matching logs.
+async fn log_fields_handler(
+    State(state): State<ApiState>,
+    Query(p): Query<LogParams>,
+) -> Response {
+    let time_min = p
+        .lookback
+        .as_deref()
+        .and_then(parse_lookback)
+        .map(|window| now_unix_nanos().saturating_sub(window));
+    let q = LogQuery {
+        service: p.service.filter(|s| !s.is_empty()),
+        min_severity: p.min_severity.filter(|s| *s > 0),
+        search: None,
+        trace_id: None,
+        time_min_unix_nano: p.start_ms.map(|ms| ms * 1_000_000).or(time_min),
+        time_max_unix_nano: p.end_ms.map(|ms| ms * 1_000_000),
+        limit: 2000,
+    };
+    let logs = match state.storage.query_logs(q).await {
+        Ok(l) => l,
+        Err(e) => return internal(e),
+    };
+    use std::collections::BTreeMap;
+    let mut fields: BTreeMap<String, BTreeMap<String, u64>> = BTreeMap::new();
+    let mut record = |name: &str, value: String| {
+        let mut value = value;
+        value.truncate(60);
+        *fields.entry(name.to_string()).or_default().entry(value).or_default() += 1;
+    };
+    fn flatten(prefix: &str, v: &serde_json::Value, out: &mut Vec<(String, String)>) {
+        match v {
+            serde_json::Value::Object(map) => {
+                for (k, val) in map {
+                    let key = if prefix.is_empty() { k.clone() } else { format!("{prefix}.{k}") };
+                    flatten(&key, val, out);
+                }
+            }
+            serde_json::Value::String(s) => out.push((prefix.to_string(), s.clone())),
+            other => out.push((prefix.to_string(), other.to_string())),
+        }
+    }
+    for l in &logs {
+        record("service", l.service_name.clone());
+        record("level", otelview_model::severity_level(l.severity_number).to_string());
+        if !l.scope_name.is_empty() {
+            record("scope", l.scope_name.clone());
+        }
+        let mut kvs = Vec::new();
+        flatten("", &l.attributes, &mut kvs);
+        flatten("", &l.resource_attributes, &mut kvs);
+        for (k, v) in kvs {
+            if !k.is_empty() {
+                record(&k, v);
+            }
+        }
+    }
+    let mut out: Vec<FieldInfo> = fields
+        .into_iter()
+        .map(|(name, values)| {
+            let count = values.values().sum();
+            let mut top: Vec<(String, u64)> = values.into_iter().collect();
+            top.sort_by(|a, b| b.1.cmp(&a.1));
+            top.truncate(5);
+            FieldInfo { name, count, top_values: top }
+        })
+        .collect();
+    out.sort_by(|a, b| b.count.cmp(&a.count).then(a.name.cmp(&b.name)));
+    out.truncate(50);
+    Json(out).into_response()
 }
 
 async fn metrics(State(state): State<ApiState>) -> Response {
@@ -259,6 +362,10 @@ async fn metrics(State(state): State<ApiState>) -> Response {
 struct SeriesParams {
     name: String,
     service: Option<String>,
+    /// Per-series function: raw | rate | increase.
+    func: Option<String>,
+    /// Cross-series aggregation: none | sum | avg | min | max.
+    agg: Option<String>,
     lookback: Option<String>,
     /// Absolute range (unix millis); overrides lookback when set.
     start_ms: Option<u64>,
@@ -285,7 +392,15 @@ async fn metric_series(
         max_points: p.max_points.unwrap_or(500).clamp(10, 10_000),
     };
     match state.storage.query_metric_series(q).await {
-        Ok(s) => Json(s).into_response(),
+        Ok(mut series) => {
+            if let Some(func) = p.func.as_deref() {
+                seriesfns::apply_function(&mut series, func);
+            }
+            if let Some(agg) = p.agg.as_deref() {
+                series = seriesfns::aggregate(series, agg, 120);
+            }
+            Json(series).into_response()
+        }
         Err(e) => internal(e),
     }
 }
@@ -336,6 +451,7 @@ struct LogHistogramParams {
     service: Option<String>,
     min_severity: Option<i32>,
     search: Option<String>,
+    kql: Option<String>,
     lookback: Option<String>,
     start_ms: Option<u64>,
     end_ms: Option<u64>,
@@ -362,8 +478,25 @@ async fn log_histogram_handler(
         time_max_unix_nano: time_max,
         limit: 0,
     };
-    match analytics::log_histogram(&state.storage, q, p.buckets.unwrap_or(40), time_min, time_max)
-        .await
+    let kql_expr = match p.kql.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        Some(query) => match kql::parse(query) {
+            Ok(expr) => expr,
+            Err(e) => {
+                return (StatusCode::BAD_REQUEST, format!("invalid KQL query: {e}"))
+                    .into_response()
+            }
+        },
+        None => None,
+    };
+    match analytics::log_histogram(
+        &state.storage,
+        q,
+        p.buckets.unwrap_or(40),
+        time_min,
+        time_max,
+        kql_expr.as_ref(),
+    )
+    .await
     {
         Ok(v) => Json(v).into_response(),
         Err(e) => internal(e),
@@ -628,6 +761,48 @@ mod tests {
             buckets.iter().map(|b| b["info"].as_u64().unwrap()).sum();
         assert_eq!(total_err, 2);
         assert_eq!(total_info, 1);
+    }
+
+    #[tokio::test]
+    async fn kql_filters_logs() {
+        let (cfg, storage) = test_state();
+        let mk = |sev: i32, method: &str, code: i64| otelview_model::LogRecord {
+            time_unix_nano: 1_000,
+            observed_time_unix_nano: 1_000,
+            severity_number: sev,
+            severity_text: String::new(),
+            body: serde_json::json!("req done"),
+            attributes: serde_json::json!({"http.method": method, "http.status_code": code}),
+            resource_attributes: serde_json::json!({}),
+            service_name: "svc".into(),
+            trace_id: String::new(),
+            span_id: String::new(),
+            scope_name: String::new(),
+        };
+        storage
+            .insert_logs(vec![mk(9, "GET", 200), mk(17, "POST", 500), mk(9, "POST", 201)])
+            .await
+            .unwrap();
+        let app = router(&cfg, storage);
+
+        let (status, v) = get_json(
+            app.clone(),
+            "/api/logs?kql=http.method%3APOST%20and%20http.status_code%3A%3E%3D500",
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(v.as_array().unwrap().len(), 1);
+        assert_eq!(v[0]["severity_number"], 17);
+
+        let (status, _) = get_json(app.clone(), "/api/logs?kql=(bad").await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+
+        let (status, v) = get_json(app, "/api/logs/fields").await;
+        assert_eq!(status, StatusCode::OK);
+        let names: Vec<&str> =
+            v.as_array().unwrap().iter().map(|f| f["name"].as_str().unwrap()).collect();
+        assert!(names.contains(&"http.method"));
+        assert!(names.contains(&"level"));
     }
 
     #[test]

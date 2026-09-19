@@ -75,3 +75,9 @@ export const logFiltersAtom = atom<LogFilters>({
 /** Metrics explorer selection. */
 export const selectedMetricAtom = atom<string | null>(null);
 export const metricServiceAtom = atom<string>("");
+/** Metric query function (raw | rate | increase). */
+export const metricFuncAtom = atom<string>("raw");
+/** Cross-series aggregation (none | sum | avg | min | max). */
+export const metricAggAtom = atom<string>("none");
+/** Logs fields sidebar visibility. */
+export const logFieldsOpenAtom = atom<boolean>(true);

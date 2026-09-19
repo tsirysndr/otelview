@@ -208,9 +208,13 @@ pub async fn log_histogram(
     buckets: usize,
     time_min: Option<u64>,
     time_max: Option<u64>,
+    kql: Option<&crate::kql::Expr>,
 ) -> anyhow::Result<Vec<LogBucket>> {
     q.limit = 5_000;
-    let logs = storage.query_logs(q).await?;
+    let mut logs = storage.query_logs(q).await?;
+    if let Some(expr) = kql {
+        logs.retain(|l| crate::kql::eval(expr, l));
+    }
     if logs.is_empty() {
         return Ok(Vec::new());
     }

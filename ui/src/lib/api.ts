@@ -81,6 +81,12 @@ export interface ServiceGraph {
   sampled_traces: number;
 }
 
+export interface FieldInfo {
+  name: string;
+  count: number;
+  top_values: [string, number][];
+}
+
 export interface LogBucket {
   time_unix_nano: number;
   trace: number;
@@ -115,6 +121,7 @@ export interface LogSearchParams {
   service?: string;
   min_severity?: number;
   search?: string;
+  kql?: string;
   trace_id?: string;
   lookback?: string;
   start_ms?: number;
@@ -129,6 +136,8 @@ export interface SeriesSearchParams {
   start_ms?: number;
   end_ms?: number;
   max_points?: number;
+  func?: string;
+  agg?: string;
 }
 
 let apiConfig = { baseUrl: "", token: "" };
@@ -181,4 +190,6 @@ export const api = {
     request<ServiceGraph>("/api/service-graph", p),
   logHistogram: (p: Record<string, unknown>) =>
     request<LogBucket[]>("/api/logs/histogram", p),
+  logFields: (p: Record<string, unknown>) =>
+    request<FieldInfo[]>("/api/logs/fields", p),
 };
