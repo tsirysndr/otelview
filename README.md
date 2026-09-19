@@ -17,6 +17,17 @@ An alternative to Datadog, Kibana, CloudWatch and SigNoz you can run anywhere: o
 └─────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+## Table of Contents
+
+- [Highlights](#highlights)
+- [Install](#install)
+- [Quickstart](#quickstart)
+- [Configuration](#configuration)
+- [The remote-storage APIs](#the-remote-storage-apis)
+- [Development](#development)
+- [Releases](#releases)
+- [License](#license)
+
 ## Highlights
 
 - **All three signals**: trace search + waterfall, live log tail, metrics explorer with multi-series charts.
@@ -31,13 +42,45 @@ An alternative to Datadog, Kibana, CloudWatch and SigNoz you can run anywhere: o
 - **Desktop app**: a Tauri shell pointing at any remote otelview API.
 - **Config**: YAML or TOML, every field optional, CLI overrides for the common knobs.
 
+## Install
+
+**Shell script** (macOS arm64, Linux x86_64/arm64):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/tsirysndr/otelview/main/install.sh | bash
+```
+
+**Docker**:
+
+```sh
+docker run -p 4317:4317 -p 4318:4318 -p 4319:4319 ghcr.io/tsirysndr/otelview
+# persist DuckDB data:
+docker run -p 4317:4317 -p 4318:4318 -p 4319:4319 \
+  -v otelview-data:/data ghcr.io/tsirysndr/otelview --storage duckdb
+```
+
+**bun / npm** (downloads the same release binary):
+
+```sh
+bun install -g otelview   # or: npm install -g otelview
+```
+
+**Pre-built binaries**: grab a tarball from the
+[releases page](https://github.com/tsirysndr/otelview/releases); the desktop
+app ships there too (`.dmg`, `.AppImage`, `.deb`).
+
+**From source**:
+
+```sh
+git clone https://github.com/tsirysndr/otelview && cd otelview
+./scripts/fetch-duckdb.sh
+(cd ui && bun install && bun run build)
+cargo build --release       # → target/release/otelview
+```
+
 ## Quickstart
 
 ```sh
-# docker
-docker run -p 4317:4317 -p 4318:4318 -p 4319:4319 ghcr.io/tsirysndr/otelview
-
-# grab a release binary (or: npm install -g otelview)
 otelview                      # in-memory storage, UI on http://127.0.0.1:4319
 otelview --storage duckdb     # persist to ./otelview.duckdb
 otelview -c otelview.yaml     # full config
@@ -45,8 +88,6 @@ otelview -c otelview.yaml     # full config
 # send something to it
 export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
 ```
-
-`npm install -g otelview` installs the same binary via GitHub releases.
 
 ## Configuration
 
@@ -121,7 +162,7 @@ Crate layout: `crates/model` (records), `crates/config`, `crates/storage` (backe
 
 ## Releases
 
-Tagging `v*` builds `aarch64-apple-darwin`, `x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu` and uploads tarballs to the GitHub release; the [`otelview`](npm/) npm package installs the matching binary via postinstall.
+Tagging `v*` builds `aarch64-apple-darwin`, `x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu` binaries plus the Tauri desktop bundles and uploads everything to the GitHub release; the docker workflow publishes the multi-arch `ghcr.io/tsirysndr/otelview` image (also runnable on demand via workflow dispatch); the [`otelview`](npm/) npm package installs the matching binary via postinstall.
 
 ## License
 
