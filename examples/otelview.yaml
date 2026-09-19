@@ -1,0 +1,29 @@
+# otelview example configuration (YAML). Every field is optional — these are
+# the defaults except where commented.
+receivers:
+  grpc:
+    enabled: true
+    listen: "0.0.0.0:4317"
+  http:
+    enabled: true
+    listen: "0.0.0.0:4318"
+
+auth:
+  header: x-otelview-token
+  # token: sekret            # uncomment to require the header on ingest
+  protect_api: false
+
+storage:
+  backend: duckdb            # memory | duckdb | jaeger | remote
+  duckdb:
+    path: otelview.duckdb
+  memory:
+    max_spans: 200000
+    max_logs: 200000
+    max_metric_points: 500000
+
+ui:
+  listen: "127.0.0.1:4319"
+  cors: true
+
+log_level: info

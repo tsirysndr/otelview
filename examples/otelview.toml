@@ -1,0 +1,26 @@
+# otelview example configuration (TOML) — same shape as the YAML file.
+
+[receivers.grpc]
+enabled = true
+listen = "0.0.0.0:4317"
+
+[receivers.http]
+enabled = true
+listen = "0.0.0.0:4318"
+
+[auth]
+header = "x-otelview-token"
+# token = "sekret"
+protect_api = false
+
+[storage]
+backend = "remote"           # traces+logs+metrics from another otelview
+
+[storage.remote]
+endpoint = "http://other-host:4317"
+auth_header = "x-otelview-token"
+# auth_token = "sekret"
+
+[ui]
+listen = "127.0.0.1:4319"
+cors = true
