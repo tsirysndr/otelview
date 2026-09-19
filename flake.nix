@@ -71,10 +71,11 @@
               export HOME=$TMPDIR
               export SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt
               bun install --frozen-lockfile --no-progress
-              # The sandbox has no /usr/bin/env: rewrite the node shebangs
-              # of tsc/vite to the store node.
-              patchShebangs node_modules/.bin
-              bun run build
+              # The sandbox has no /usr/bin/env and bun symlinks .bin entries
+              # (patchShebangs skips symlinks) — run the tools via node
+              # directly instead of relying on their shebangs.
+              node node_modules/typescript/bin/tsc --noEmit
+              node node_modules/vite/bin/vite.js build
             '';
             installPhase = ''
               cp -r dist $out
