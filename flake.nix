@@ -66,11 +66,14 @@
                   || lib.hasPrefix "storybook-static" rel
                   || lib.hasPrefix "src-tauri" rel);
             };
-            nativeBuildInputs = [ pkgs.bun pkgs.cacert ];
+            nativeBuildInputs = [ pkgs.bun pkgs.nodejs pkgs.cacert ];
             buildPhase = ''
               export HOME=$TMPDIR
               export SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt
               bun install --frozen-lockfile --no-progress
+              # The sandbox has no /usr/bin/env: rewrite the node shebangs
+              # of tsc/vite to the store node.
+              patchShebangs node_modules/.bin
               bun run build
             '';
             installPhase = ''
@@ -78,8 +81,10 @@
             '';
             outputHashAlgo = "sha256";
             outputHashMode = "recursive";
-            # Placeholder: the first CI run reports the real hash to paste in.
-            outputHash = lib.fakeHash;
+            # NAR hash of the dist output (recompute after UI changes:
+            # `nix hash path ui/dist` on a fresh `bun run build`, or take the
+            # "got:" hash from the CI mismatch error).
+            outputHash = "sha256-lBcEwlukgzkbPh4TCXNXlCKX7QvXO3ERP0ds70DfDkU=";
           };
 
           # Keep proto files (tonic codegen inputs) alongside the cargo sources.
