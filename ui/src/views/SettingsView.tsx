@@ -6,6 +6,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { apiSettingsAtom } from "../state/atoms";
 import { setApiConfig } from "../lib/api";
 import { plainTextField } from "../lib/inputProps";
+import { Field } from "../components/Field";
 
 /** API connection settings — mainly for the Tauri desktop app, which points
  * at a remote otelview server; the web build defaults to same-origin. */
@@ -51,25 +52,29 @@ export function SettingsView() {
           <span className="text-neon-cyan">http://otel.example.com:4319</span>.
         </p>
       </div>
-      <Input
-        {...plainTextField}
-        variant="bordered"
-        radius="sm"
-        label="API base URL"
-        placeholder="http://127.0.0.1:4319 (empty = same origin)"
-        value={baseUrl}
-        onValueChange={setBaseUrl}
-      />
-      <Input
-        {...plainTextField}
-        variant="bordered"
-        radius="sm"
-        label="API token"
-        placeholder="only if auth.protect_api is enabled"
-        type="password"
-        value={token}
-        onValueChange={setToken}
-      />
+      <Field label="API base URL">
+        <Input
+          {...plainTextField}
+          variant="bordered"
+          radius="sm"
+          aria-label="API base URL"
+          placeholder="http://127.0.0.1:4319 (empty = same origin)"
+          value={baseUrl}
+          onValueChange={setBaseUrl}
+        />
+      </Field>
+      <Field label="API token">
+        <Input
+          {...plainTextField}
+          variant="bordered"
+          radius="sm"
+          aria-label="API token"
+          placeholder="only if auth.protect_api is enabled"
+          type="password"
+          value={token}
+          onValueChange={setToken}
+        />
+      </Field>
       <div className="flex items-center gap-2">
         <Button
           color="primary"
