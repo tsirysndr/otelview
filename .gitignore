@@ -12,3 +12,4 @@ ui/src-tauri/gen/
 *.log
 *.duckdb.wal
 result
+nfpm.generated.yaml

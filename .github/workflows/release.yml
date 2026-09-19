@@ -73,12 +73,14 @@ jobs:
             aarch64-*) NFPM_ARCH=arm64 ;;
           esac
           mkdir -p dist
+          export VERSION NFPM_ARCH TARGET
+          envsubst '$VERSION $NFPM_ARCH $TARGET' < nfpm.yaml > nfpm.generated.yaml
+          cat nfpm.generated.yaml
           docker run --rm -v "$PWD:/work" -w /work \
-            -e VERSION="$VERSION" -e NFPM_ARCH="$NFPM_ARCH" -e TARGET="$TARGET" \
-            goreleaser/nfpm package -f nfpm.yaml -p deb -t dist/
+            goreleaser/nfpm package -f nfpm.generated.yaml -p deb -t dist/
           docker run --rm -v "$PWD:/work" -w /work \
-            -e VERSION="$VERSION" -e NFPM_ARCH="$NFPM_ARCH" -e TARGET="$TARGET" \
-            goreleaser/nfpm package -f nfpm.yaml -p rpm -t dist/
+            goreleaser/nfpm package -f nfpm.generated.yaml -p rpm -t dist/
+          rm nfpm.generated.yaml
           (cd dist && shasum -a 256 * > "SHA256SUMS-packages-$NFPM_ARCH.txt")
           ls -la dist/
 
