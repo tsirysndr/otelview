@@ -1,0 +1,23 @@
+[package]
+name = "otelview-api"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+otelview-model = { workspace = true }
+otelview-config = { workspace = true }
+otelview-storage = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+axum = { workspace = true }
+tower-http = { workspace = true }
+rust-embed = { workspace = true }
+mime = { workspace = true }
+
+[dev-dependencies]
+tower = { workspace = true, features = ["util"] }
+http-body-util = "0.1"
