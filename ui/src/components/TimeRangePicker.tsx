@@ -99,7 +99,27 @@ export function TimeRangePicker() {
             hourCycle={24}
             visibleMonths={1}
             className="w-[350px]"
-            classNames={{ inputWrapper: "border-default-300" }}
+            classNames={{
+              inputWrapper: "border-default-300 data-[hover=true]:border-default-400",
+              selectorIcon: "text-neon-cyan",
+            }}
+            popoverProps={{
+              classNames: {
+                content:
+                  "rounded-large border border-content3 bg-content1 shadow-none",
+              },
+            }}
+            calendarProps={{
+              classNames: {
+                base: "bg-content1",
+                headerWrapper: "bg-content1",
+                gridHeader: "bg-content1 shadow-none",
+                title: "text-default-600 text-xs uppercase tracking-wider",
+                gridHeaderCell: "text-default-500",
+                cellButton:
+                  "data-[today=true]:text-neon-cyan data-[selected=true]:data-[range-selection=true]:bg-primary/20 data-[selection-start=true]:bg-primary data-[selection-end=true]:bg-primary",
+              },
+            }}
             value={
               custom
                 ? { start: toZoned(custom.from), end: toZoned(custom.to) }
