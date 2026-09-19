@@ -1,0 +1,10 @@
+target/
+node_modules/
+.duckdb/
+.cargo/config.toml
+ui/dist/
+ui/storybook-static/
+ui/src-tauri/target/
+ui/src-tauri/gen/
+*.duckdb
+*.log

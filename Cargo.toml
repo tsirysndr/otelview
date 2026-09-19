@@ -1,0 +1,68 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/model",
+    "crates/config",
+    "crates/storage",
+    "crates/receiver",
+    "crates/api",
+    "crates/otelview",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/tsirysndr/otel-viewer"
+
+[workspace.dependencies]
+otelview-model = { path = "crates/model" }
+otelview-config = { path = "crates/config" }
+otelview-storage = { path = "crates/storage" }
+otelview-receiver = { path = "crates/receiver" }
+otelview-api = { path = "crates/api" }
+
+anyhow = "1"
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+toml = "0.9"
+tokio = { version = "1", features = ["full"] }
+async-trait = "0.1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+axum = "0.8"
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "compression-gzip"] }
+tonic = "0.14"
+prost = "0.14"
+opentelemetry-proto = { version = "0.33", default-features = false, features = [
+    "gen-tonic",
+    "trace",
+    "logs",
+    "metrics",
+    "with-serde",
+] }
+# Statically linked against the pre-built libduckdb static bundle from GitHub
+# releases — run scripts/fetch-duckdb.sh once before building. DuckDB is never
+# compiled locally (no "bundled" feature) and the binary stays self-contained.
+duckdb = { version = "1.10505" }
+sqlx = { version = "0.9", default-features = false, features = [
+    "runtime-tokio",
+    "tls-rustls",
+    "postgres",
+    "json",
+] }
+rust-embed = "8"
+clap = { version = "4", features = ["derive"] }
+hex = "0.4"
+bytes = "1"
+flate2 = "1"
+mime = "0.3"
+rand = "0.9"
+
+[profile.release]
+lto = "thin"
+strip = true
+opt-level = 3
