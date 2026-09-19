@@ -1,0 +1,83 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  font-family: "Roboto Mono Variable", ui-monospace, SFMono-Regular, "SF Mono",
+    "JetBrains Mono", "Cascadia Code", monospace;
+  font-size: 13px;
+}
+
+/* Placeholders read as hints, not values. */
+input::placeholder,
+textarea::placeholder {
+  color: hsl(var(--heroui-default-400)) !important;
+  opacity: 0.65 !important;
+}
+
+/* Focused fields read via border color; kill native/HeroUI focus glows. */
+input:focus,
+input:focus-visible,
+textarea:focus,
+textarea:focus-visible,
+select:focus,
+select:focus-visible,
+[data-focus-visible="true"] {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* Slim scrollbars everywhere. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--heroui-default-300)) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: hsl(var(--heroui-default-300));
+  border-radius: 4px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-none {
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+/* Keyboard-shortcut chips: flat neon-outlined keys. */
+kbd.neon-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5rem;
+  padding: 0.1rem 0.4rem;
+  border: 1px solid #3a2558;
+  border-radius: 4px;
+  background: #190d2e;
+  color: #05d9e8;
+  font-size: 11px;
+  line-height: 1;
+  box-shadow: 0 0 6px rgba(5, 217, 232, 0.25);
+}
+
+/* Waterfall row hover accent. */
+.span-row:hover {
+  background: hsl(var(--heroui-content2));
+}
+.span-row[data-selected="true"] {
+  background: rgba(255, 42, 109, 0.14);
+  box-shadow: inset 2px 0 0 #ff2a6d;
+}
