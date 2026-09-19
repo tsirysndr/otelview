@@ -1,4 +1,3 @@
-import { Tooltip } from "@heroui/react";
 import {
   IconAlignLeft,
   IconChartLine,
@@ -6,7 +5,13 @@ import {
   IconSettings,
 } from "@tabler/icons-react";
 import { useAtom, useSetAtom } from "jotai";
-import { openTraceIdAtom, selectedLogAtom, selectedSpanIdAtom, viewAtom, type View } from "../state/atoms";
+import {
+  openTraceIdAtom,
+  selectedLogAtom,
+  selectedSpanIdAtom,
+  viewAtom,
+  type View,
+} from "../state/atoms";
 
 const ITEMS: { view: View; label: string; icon: typeof IconRoute }[] = [
   { view: "traces", label: "Traces", icon: IconRoute },
@@ -18,34 +23,33 @@ function RailButton({
   active,
   label,
   onPress,
-  children,
+  icon: Icon,
 }: {
   active: boolean;
   label: string;
   onPress: () => void;
-  children: React.ReactNode;
+  icon: typeof IconRoute;
 }) {
   return (
-    <Tooltip content={label} placement="right" delay={400} closeDelay={0}>
-      <button
-        onClick={onPress}
-        aria-label={label}
-        className={`relative flex h-11 w-full items-center justify-center transition-colors ${
-          active
-            ? "text-neon-cyan"
-            : "text-default-500 hover:text-foreground"
-        }`}
-      >
-        {active && (
-          <span className="absolute left-0 top-1.5 h-8 w-0.5 rounded-r bg-neon-cyan shadow-[0_0_6px_#05D9E8]" />
-        )}
-        {children}
-      </button>
-    </Tooltip>
+    <button
+      onClick={onPress}
+      aria-label={label}
+      className={`relative flex h-9 w-full items-center gap-2.5 px-3 text-sm transition-colors ${
+        active
+          ? "bg-content2 text-neon-cyan"
+          : "text-default-500 hover:bg-content2/60 hover:text-foreground"
+      }`}
+    >
+      {active && (
+        <span className="absolute left-0 top-1 h-7 w-0.5 rounded-r bg-neon-cyan shadow-[0_0_6px_#05D9E8]" />
+      )}
+      <Icon size={18} stroke={1.6} className="shrink-0" />
+      <span className="truncate">{label}</span>
+    </button>
   );
 }
 
-/** VS Code-style activity bar. */
+/** Left sidebar: always shows icon + title (never minified). */
 export function IconRail() {
   const [view, setView] = useAtom(viewAtom);
   const setOpenTrace = useSetAtom(openTraceIdAtom);
@@ -60,20 +64,23 @@ export function IconRail() {
   };
 
   return (
-    <nav className="flex w-12 shrink-0 flex-col items-center border-r border-divider bg-content1 py-1">
-      {ITEMS.map(({ view: v, label, icon: Icon }) => (
-        <RailButton key={v} active={view === v} label={label} onPress={() => switchTo(v)}>
-          <Icon size={22} stroke={1.6} />
-        </RailButton>
+    <nav className="flex w-40 shrink-0 flex-col border-r border-divider bg-content1 py-1.5">
+      {ITEMS.map(({ view: v, label, icon }) => (
+        <RailButton
+          key={v}
+          active={view === v}
+          label={label}
+          icon={icon}
+          onPress={() => switchTo(v)}
+        />
       ))}
       <div className="flex-1" />
       <RailButton
         active={view === "settings"}
         label="Settings"
+        icon={IconSettings}
         onPress={() => switchTo("settings")}
-      >
-        <IconSettings size={22} stroke={1.6} />
-      </RailButton>
+      />
     </nav>
   );
 }
