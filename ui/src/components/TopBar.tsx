@@ -54,7 +54,16 @@ export function TopBar() {
 
       <Tooltip content="Auto-refresh (l)" delay={400}>
         <div className="flex items-center gap-1.5">
-          <Switch size="sm" isSelected={live} onValueChange={setLive} aria-label="Live" />
+          <Switch
+            size="sm"
+            isSelected={live}
+            onValueChange={setLive}
+            aria-label="Live"
+            classNames={{
+              wrapper: "h-4 w-8 mr-0",
+              thumb: "h-3 w-3 group-data-[selected=true]:ms-4",
+            }}
+          />
           <span className={`text-xs ${live ? "text-neon-green" : "text-default-500"}`}>
             live
           </span>
