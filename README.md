@@ -2,7 +2,7 @@
 
 # otelview
 
-[![ci](https://github.com/tsirysndr/otelview/actions/workflows/ci.yml/badge.svg)](https://github.com/tsirysndr/otelview/actions/workflows/ci.yml)
+[![ci](https://github.com/tsirysndr/otelview/actions/workflows/ci.yml/badge.svg)](https://github.com/tsirysndr/otelview/actions/workflows/ci.yml) [![FlakeHub](https://img.shields.io/endpoint?url=https://flakehub.com/f/tsirysndr/otelview/badge)](https://flakehub.com/flake/tsirysndr/otelview)
 
 **The open-source, self-hosted OpenTelemetry viewer — traces, metrics and logs in one fast, beautiful, single binary.**
 
