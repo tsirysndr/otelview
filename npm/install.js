@@ -7,7 +7,7 @@ const path = require("path");
 const { execFileSync } = require("child_process");
 
 const pkg = require("./package.json");
-const REPO = "tsirysndr/otel-viewer";
+const REPO = "tsirysndr/otelview";
 const VERSION = `v${pkg.version}`;
 
 function target() {

@@ -5,7 +5,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/tsirysndr/otel-viewer.git"
+    "url": "git+https://github.com/tsirysndr/otelview.git"
   },
   "keywords": [
     "opentelemetry",
@@ -39,5 +39,5 @@
   "engines": {
     "node": ">=18"
   },
-  "homepage": "https://github.com/tsirysndr/otel-viewer#readme"
+  "homepage": "https://github.com/tsirysndr/otelview#readme"
 }

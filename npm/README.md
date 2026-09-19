@@ -2,7 +2,7 @@
 
 **The open-source, self-hosted OpenTelemetry viewer — traces, metrics and logs in one fast, beautiful, single binary.**
 
-An alternative to Datadog, Kibana, CloudWatch and SigNoz you can run anywhere. This package downloads the pre-built `otelview` binary for your platform from [GitHub releases](https://github.com/tsirysndr/otel-viewer/releases) — the binary embeds the OTLP receivers, the storage engine (DuckDB, statically linked) and the web UI. No cluster, no JVM, no SaaS bill.
+An alternative to Datadog, Kibana, CloudWatch and SigNoz you can run anywhere. This package downloads the pre-built `otelview` binary for your platform from [GitHub releases](https://github.com/tsirysndr/otelview/releases) — the binary embeds the OTLP receivers, the storage engine (DuckDB, statically linked) and the web UI. No cluster, no JVM, no SaaS bill.
 
 ## Install
 
@@ -37,7 +37,7 @@ Open **http://127.0.0.1:4319** for the UI: trace search + waterfall, live log ta
 - **It's a storage server too**: every instance serves the Jaeger v2 `TraceReader` API plus log/metric reader APIs on its gRPC port.
 - **Single binary** — the web UI is embedded; configuration is YAML or TOML.
 
-Full documentation, configuration reference and source: [github.com/tsirysndr/otel-viewer](https://github.com/tsirysndr/otel-viewer).
+Full documentation, configuration reference and source: [github.com/tsirysndr/otelview](https://github.com/tsirysndr/otelview).
 
 ## License
 
