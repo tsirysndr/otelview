@@ -142,8 +142,16 @@ export interface SeriesSearchParams {
 
 let apiConfig = { baseUrl: "", token: "" };
 
+function isTauri(): boolean {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
 export function setApiConfig(cfg: { baseUrl: string; token: string }) {
-  apiConfig = { baseUrl: cfg.baseUrl.replace(/\/+$/, ""), token: cfg.token };
+  let baseUrl = cfg.baseUrl.replace(/\/+$/, "");
+  // Desktop app with no configured server: talk to the embedded (or already
+  // running) local instance.
+  if (!baseUrl && isTauri()) baseUrl = "http://127.0.0.1:4319";
+  apiConfig = { baseUrl, token: cfg.token };
 }
 
 export class ApiError extends Error {

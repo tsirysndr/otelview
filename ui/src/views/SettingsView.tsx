@@ -46,9 +46,11 @@ export function SettingsView() {
           API connection
         </h2>
         <p className="mt-1 text-xs text-default-500">
-          Where this UI reads data from. Leave the URL empty to use the server
-          that serves this page (single-binary mode). The desktop app must
-          point at a remote otelview instance, e.g.{" "}
+          Where this UI reads data from. Leave the URL empty for the default:
+          the server that serves this page (web), or the local instance on
+          127.0.0.1:4319 (desktop — an embedded DuckDB-backed server starts
+          automatically when none is running). Set a URL to connect to any
+          remote otelview instance instead, e.g.{" "}
           <span className="text-neon-cyan">http://otel.example.com:4319</span>.
         </p>
       </div>
