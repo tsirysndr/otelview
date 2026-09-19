@@ -12,7 +12,7 @@ import {
 import { fieldProps, plainTextField } from "../lib/inputProps";
 import { api } from "../lib/api";
 import { fmtAgo, fmtDuration } from "../lib/format";
-import { serviceColor } from "../lib/colors";
+import { serviceNeon } from "../lib/colors";
 import { ScatterPlot } from "../components/ScatterPlot";
 import { ServiceChip } from "../components/ServiceChip";
 import { Waterfall } from "../components/Waterfall";
@@ -140,7 +140,10 @@ function TraceList() {
             <div className="flex items-baseline gap-2">
               <span
                 className="h-2.5 w-1 shrink-0 self-center rounded-sm"
-                style={{ background: serviceColor(t.root_service) }}
+                style={{
+                  background: serviceNeon(t.root_service).color,
+                  boxShadow: serviceNeon(t.root_service).glow,
+                }}
               />
               <span className="truncate text-sm font-medium">{t.root_name}</span>
               <span className="shrink-0 text-xs text-neon-cyan">
@@ -162,7 +165,11 @@ function TraceList() {
                   className="h-full rounded"
                   style={{
                     width: `${Math.max((t.duration_nanos / maxDuration) * 100, 2)}%`,
-                    background: t.error_count > 0 ? "#FF3864" : serviceColor(t.root_service),
+                    background: t.error_count > 0 ? "#FF3864" : serviceNeon(t.root_service).color,
+                    boxShadow:
+                      t.error_count > 0
+                        ? "0 0 6px rgba(255,56,100,0.6)"
+                        : serviceNeon(t.root_service).glow,
                   }}
                 />
               </div>

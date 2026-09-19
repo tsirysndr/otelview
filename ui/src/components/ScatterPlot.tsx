@@ -76,11 +76,16 @@ export function ScatterPlot({
               cx={x(t.start_time_unix_nano)}
               cy={y(t.duration_nanos)}
               r={hover?.trace_id === t.trace_id ? 6 : 4.5}
-              fill={isErr ? STATUS.error : "#0891B2"}
-              fillOpacity={0.85}
+              fill={isErr ? STATUS.error : "#05D9E8"}
+              fillOpacity={0.9}
               stroke={isErr ? "#FFFFFF" : "hsl(var(--heroui-background))"}
               strokeWidth={isErr ? 1.5 : 1}
               className="cursor-pointer"
+              style={{
+                filter: isErr
+                  ? "drop-shadow(0 0 4px rgba(255,56,100,0.8))"
+                  : "drop-shadow(0 0 3px rgba(5,217,232,0.6))",
+              }}
               onMouseEnter={() => setHover(t)}
               onMouseLeave={() => setHover(null)}
               onClick={() => onOpen(t.trace_id)}

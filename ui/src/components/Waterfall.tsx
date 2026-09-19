@@ -3,7 +3,7 @@ import { IconChevronDown, IconChevronRight, IconAlertTriangle } from "@tabler/ic
 import { useAtom, useSetAtom } from "jotai";
 import { inspectorOpenAtom, selectedSpanIdAtom } from "../state/atoms";
 import type { SpanRecord } from "../lib/api";
-import { serviceColor } from "../lib/colors";
+import { serviceNeon } from "../lib/colors";
 import { fmtDuration } from "../lib/format";
 
 interface Node {
@@ -100,7 +100,7 @@ export function Waterfall({ spans }: { spans: SpanRecord[] }) {
           const left = ((s.start_time_unix_nano - t0) / total) * 100;
           const w = Math.max(((s.end_time_unix_nano - s.start_time_unix_nano) / total) * 100, 0.2);
           const isErr = s.status_code === 2;
-          const color = serviceColor(s.service_name);
+          const { color, glow } = serviceNeon(s.service_name);
           const hasKids = n.children.length > 0;
           return (
             <div
@@ -136,7 +136,7 @@ export function Waterfall({ spans }: { spans: SpanRecord[] }) {
                 )}
                 <span
                   className="h-2.5 w-1 shrink-0 rounded-sm"
-                  style={{ background: color }}
+                  style={{ background: color, boxShadow: glow }}
                 />
                 <span className="truncate text-xs">
                   {isErr && (
@@ -167,7 +167,7 @@ export function Waterfall({ spans }: { spans: SpanRecord[] }) {
                     left: `${left}%`,
                     width: `${w}%`,
                     background: isErr ? "#FF3864" : color,
-                    boxShadow: isErr ? "0 0 6px rgba(255,56,100,0.6)" : undefined,
+                    boxShadow: isErr ? "0 0 8px rgba(255,56,100,0.75)" : glow,
                     minWidth: 2,
                   }}
                 />

@@ -1,7 +1,7 @@
-import { serviceColor } from "../lib/colors";
+import { serviceNeon } from "../lib/colors";
 
 export function ServiceChip({ service, small }: { service: string; small?: boolean }) {
-  const color = serviceColor(service);
+  const { color, glow } = serviceNeon(service);
   return (
     <span
       className={`inline-flex items-center gap-1.5 rounded-md bg-content2 ${
@@ -10,7 +10,7 @@ export function ServiceChip({ service, small }: { service: string; small?: boole
     >
       <span
         className="inline-block h-2 w-2 shrink-0 rounded-full"
-        style={{ background: color }}
+        style={{ background: color, boxShadow: glow }}
       />
       {service}
     </span>
