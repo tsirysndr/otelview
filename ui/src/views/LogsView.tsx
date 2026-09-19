@@ -14,6 +14,7 @@ import { api, type LogRecord } from "../lib/api";
 import { bodyPreview, fmtTime, severityInfo } from "../lib/format";
 import { EmptyState } from "../components/EmptyState";
 import { Field } from "../components/Field";
+import { LogHistogram } from "../components/LogHistogram";
 import { FilterSelect } from "../components/FilterSelect";
 import { ServiceChip } from "../components/ServiceChip";
 
@@ -37,6 +38,19 @@ export function LogsView() {
   const setInspectorOpen = useSetAtom(inspectorOpenAtom);
 
   const { data: services = [] } = useQuery({ queryKey: ["services"], queryFn: api.services });
+  const { data: histogram = [] } = useQuery({
+    queryKey: ["log-histogram", filters, timeParams],
+    queryFn: () =>
+      api.logHistogram({
+        service: filters.service || undefined,
+        min_severity: filters.minSeverity || undefined,
+        search: filters.search || undefined,
+        ...timeParams,
+        buckets: 60,
+      }),
+    refetchInterval: live ? 5_000 : false,
+  });
+
   const { data: logs = [], isLoading } = useQuery({
     queryKey: ["logs", filters, timeParams],
     queryFn: () =>
@@ -87,6 +101,12 @@ export function LogsView() {
           {logs.length} records{live ? " · tailing" : ""}
         </span>
       </div>
+
+      {histogram.length > 0 && (
+        <div className="shrink-0 border-b border-divider px-2 pt-1">
+          <LogHistogram buckets={histogram} />
+        </div>
+      )}
 
       <div className="min-h-0 flex-1 overflow-y-auto font-mono">
         {isLoading && <p className="p-4 text-sm text-default-500">loading…</p>}

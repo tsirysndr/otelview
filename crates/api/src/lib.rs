@@ -18,6 +18,8 @@ use rust_embed::RustEmbed;
 use serde::Deserialize;
 use tower_http::cors::CorsLayer;
 
+pub mod analytics;
+
 #[derive(RustEmbed)]
 #[folder = "../../ui/dist"]
 struct UiAssets;
@@ -54,6 +56,9 @@ pub fn router(cfg: &Config, storage: DynStorage) -> Router {
         .route("/metrics", get(metrics))
         .route("/metrics/series", get(metric_series))
         .route("/stats", get(stats))
+        .route("/services/stats", get(service_stats_handler))
+        .route("/service-graph", get(service_graph_handler))
+        .route("/logs/histogram", get(log_histogram_handler))
         .route("/config", get(config_view))
         .with_state(state.clone());
     if cfg.ui.auth_enabled() || (cfg.auth.enabled() && cfg.auth.protect_api) {
@@ -285,6 +290,86 @@ async fn metric_series(
     }
 }
 
+#[derive(Deserialize)]
+struct WindowParams {
+    lookback: Option<String>,
+    start_ms: Option<u64>,
+    end_ms: Option<u64>,
+}
+
+impl WindowParams {
+    fn bounds(&self) -> (Option<u64>, Option<u64>) {
+        let min = self.start_ms.map(|ms| ms * 1_000_000).or_else(|| {
+            self.lookback
+                .as_deref()
+                .and_then(parse_lookback)
+                .map(|w| now_unix_nanos().saturating_sub(w))
+        });
+        (min, self.end_ms.map(|ms| ms * 1_000_000))
+    }
+}
+
+async fn service_stats_handler(
+    State(state): State<ApiState>,
+    Query(p): Query<WindowParams>,
+) -> Response {
+    let (min, max) = p.bounds();
+    match analytics::service_stats(&state.storage, min, max).await {
+        Ok(v) => Json(v).into_response(),
+        Err(e) => internal(e),
+    }
+}
+
+async fn service_graph_handler(
+    State(state): State<ApiState>,
+    Query(p): Query<WindowParams>,
+) -> Response {
+    let (min, max) = p.bounds();
+    match analytics::service_graph(&state.storage, min, max).await {
+        Ok(v) => Json(v).into_response(),
+        Err(e) => internal(e),
+    }
+}
+
+#[derive(Deserialize)]
+struct LogHistogramParams {
+    service: Option<String>,
+    min_severity: Option<i32>,
+    search: Option<String>,
+    lookback: Option<String>,
+    start_ms: Option<u64>,
+    end_ms: Option<u64>,
+    buckets: Option<usize>,
+}
+
+async fn log_histogram_handler(
+    State(state): State<ApiState>,
+    Query(p): Query<LogHistogramParams>,
+) -> Response {
+    let time_min = p.start_ms.map(|ms| ms * 1_000_000).or_else(|| {
+        p.lookback
+            .as_deref()
+            .and_then(parse_lookback)
+            .map(|w| now_unix_nanos().saturating_sub(w))
+    });
+    let time_max = p.end_ms.map(|ms| ms * 1_000_000);
+    let q = LogQuery {
+        service: p.service.filter(|s| !s.is_empty()),
+        min_severity: p.min_severity.filter(|s| *s > 0),
+        search: p.search.filter(|s| !s.is_empty()),
+        trace_id: None,
+        time_min_unix_nano: time_min,
+        time_max_unix_nano: time_max,
+        limit: 0,
+    };
+    match analytics::log_histogram(&state.storage, q, p.buckets.unwrap_or(40), time_min, time_max)
+        .await
+    {
+        Ok(v) => Json(v).into_response(),
+        Err(e) => internal(e),
+    }
+}
+
 async fn stats(State(state): State<ApiState>) -> Response {
     match state.storage.stats().await {
         Ok(s) => Json(s).into_response(),
@@ -462,6 +547,87 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert_eq!(v.as_array().unwrap().len(), 1);
         assert_eq!(v[0]["trace_id"], "mid");
+    }
+
+    fn span_kv(
+        trace: &str,
+        id: &str,
+        parent: &str,
+        svc: &str,
+        start: u64,
+        dur: u64,
+        err: bool,
+    ) -> otelview_model::SpanRecord {
+        let mut s = span(trace, svc, start);
+        s.span_id = id.into();
+        s.parent_span_id = parent.into();
+        s.end_time_unix_nano = start + dur;
+        s.status_code = if err { 2 } else { 0 };
+        s
+    }
+
+    #[tokio::test]
+    async fn service_stats_and_graph() {
+        let (cfg, storage) = test_state();
+        storage
+            .insert_spans(vec![
+                span_kv("t1", "a", "", "gateway", 1_000, 10_000_000, false),
+                span_kv("t1", "b", "a", "db", 2_000, 4_000_000, true),
+                span_kv("t2", "c", "", "gateway", 9_000, 20_000_000, false),
+                span_kv("t2", "d", "c", "db", 9_500, 2_000_000, false),
+            ])
+            .await
+            .unwrap();
+        let app = router(&cfg, storage);
+
+        let (status, v) = get_json(app.clone(), "/api/services/stats").await;
+        assert_eq!(status, StatusCode::OK);
+        let stats = v.as_array().unwrap();
+        assert_eq!(stats.len(), 2);
+        let db = stats.iter().find(|s| s["service"] == "db").unwrap();
+        assert_eq!(db["span_count"], 2);
+        assert_eq!(db["error_count"], 1);
+
+        let (status, v) = get_json(app, "/api/service-graph").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(v["edges"][0]["source"], "gateway");
+        assert_eq!(v["edges"][0]["target"], "db");
+        assert_eq!(v["edges"][0]["calls"], 2);
+        assert_eq!(v["edges"][0]["errors"], 1);
+        assert_eq!(v["sampled_traces"], 2);
+    }
+
+    #[tokio::test]
+    async fn log_histogram_buckets_by_severity() {
+        let (cfg, storage) = test_state();
+        let mk = |t: u64, sev: i32| otelview_model::LogRecord {
+            time_unix_nano: t,
+            observed_time_unix_nano: t,
+            severity_number: sev,
+            severity_text: String::new(),
+            body: serde_json::json!("x"),
+            attributes: serde_json::json!({}),
+            resource_attributes: serde_json::json!({}),
+            service_name: "svc".into(),
+            trace_id: String::new(),
+            span_id: String::new(),
+            scope_name: String::new(),
+        };
+        storage
+            .insert_logs(vec![mk(1_000, 9), mk(2_000, 17), mk(500_000, 17)])
+            .await
+            .unwrap();
+        let app = router(&cfg, storage);
+        let (status, v) = get_json(app, "/api/logs/histogram?buckets=5").await;
+        assert_eq!(status, StatusCode::OK);
+        let buckets = v.as_array().unwrap();
+        assert_eq!(buckets.len(), 5);
+        let total_err: u64 =
+            buckets.iter().map(|b| b["error"].as_u64().unwrap()).sum();
+        let total_info: u64 =
+            buckets.iter().map(|b| b["info"].as_u64().unwrap()).sum();
+        assert_eq!(total_err, 2);
+        assert_eq!(total_info, 1);
     }
 
     #[test]

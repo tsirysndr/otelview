@@ -63,6 +63,34 @@ export interface MetricSeries {
   points: SeriesPoint[];
 }
 
+export interface ServiceStats {
+  service: string;
+  span_count: number;
+  request_count: number;
+  error_count: number;
+  error_rate: number;
+  rate_per_sec: number;
+  p50_ms: number;
+  p95_ms: number;
+  p99_ms: number;
+}
+
+export interface ServiceGraph {
+  nodes: { service: string; span_count: number; error_count: number; avg_ms: number }[];
+  edges: { source: string; target: string; calls: number; errors: number; avg_ms: number }[];
+  sampled_traces: number;
+}
+
+export interface LogBucket {
+  time_unix_nano: number;
+  trace: number;
+  debug: number;
+  info: number;
+  warn: number;
+  error: number;
+  fatal: number;
+}
+
 export interface StorageStats {
   spans: number;
   logs: number;
@@ -147,4 +175,10 @@ export const api = {
   metricSeries: (p: SeriesSearchParams) =>
     request<MetricSeries[]>("/api/metrics/series", { ...p }),
   stats: () => request<StorageStats>("/api/stats"),
+  serviceStats: (p: Record<string, unknown>) =>
+    request<ServiceStats[]>("/api/services/stats", p),
+  serviceGraph: (p: Record<string, unknown>) =>
+    request<ServiceGraph>("/api/service-graph", p),
+  logHistogram: (p: Record<string, unknown>) =>
+    request<LogBucket[]>("/api/logs/histogram", p),
 };

@@ -334,6 +334,9 @@ export function CommandPalette() {
             <Item icon={<IconChartLine size={16} />} onSelect={() => run(() => setView("metrics"))}>
               Metrics
             </Item>
+            <Item icon={<IconServer size={16} />} onSelect={() => run(() => setView("services"))}>
+              Services
+            </Item>
             <Item icon={<IconSettings size={16} />} onSelect={() => run(() => setView("settings"))}>
               Settings
             </Item>

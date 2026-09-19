@@ -14,6 +14,7 @@ import { HelpModal } from "./components/HelpModal";
 import { TracesView } from "./views/TracesView";
 import { LogsView } from "./views/LogsView";
 import { MetricsView } from "./views/MetricsView";
+import { ServicesView } from "./views/ServicesView";
 import { SettingsView } from "./views/SettingsView";
 
 export default function App() {
@@ -39,6 +40,7 @@ export default function App() {
             {view === "traces" && <TracesView />}
             {view === "logs" && <LogsView />}
             {view === "metrics" && <MetricsView />}
+            {view === "services" && <ServicesView />}
             {view === "settings" && <SettingsView />}
           </main>
           <Inspector />

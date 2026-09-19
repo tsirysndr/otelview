@@ -99,6 +99,9 @@ export function useShortcuts() {
           setView("metrics");
           break;
         case "4":
+          setView("services");
+          break;
+        case "5":
           setView("settings");
           break;
         case "t":
@@ -140,7 +143,8 @@ export const SHORTCUTS: { keys: string[]; label: string }[] = [
   { keys: ["1"], label: "Traces" },
   { keys: ["2"], label: "Logs" },
   { keys: ["3"], label: "Metrics" },
-  { keys: ["4"], label: "Settings" },
+  { keys: ["4"], label: "Services" },
+  { keys: ["5"], label: "Settings" },
   { keys: ["⌘B"], label: "Toggle left rail" },
   { keys: ["⌘J"], label: "Toggle inspector panel" },
   { keys: ["l"], label: "Toggle live refresh" },

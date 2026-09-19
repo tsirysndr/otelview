@@ -34,7 +34,8 @@ An alternative to Datadog, Kibana, CloudWatch and SigNoz you can run anywhere: o
 
 ## Highlights
 
-- **All three signals**: trace search + waterfall, live log tail, metrics explorer with multi-series charts.
+- **All three signals**: trace search + waterfall, live log tail with a severity histogram, metrics explorer with multi-series charts.
+- **APM built in**: a service dependency map and per-service RED metrics (request rate, error rate, p50/p95/p99 latency) derived live from your traces.
 - **OTLP in, both transports**: gRPC (`:4317`) and HTTP (`:4318`), protobuf **and** JSON, gzip supported, optional header-token auth.
 - **Storage your way**:
   - `memory` — bounded ring buffers, zero setup;

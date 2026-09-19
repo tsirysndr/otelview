@@ -3,6 +3,7 @@ import {
   IconChartLine,
   IconRoute,
   IconSettings,
+  IconTopologyStar3,
 } from "@tabler/icons-react";
 import { useAtom, useSetAtom } from "jotai";
 import {
@@ -17,6 +18,7 @@ const ITEMS: { view: View; label: string; icon: typeof IconRoute }[] = [
   { view: "traces", label: "Traces", icon: IconRoute },
   { view: "logs", label: "Logs", icon: IconAlignLeft },
   { view: "metrics", label: "Metrics", icon: IconChartLine },
+  { view: "services", label: "Services", icon: IconTopologyStar3 },
 ];
 
 function RailButton({

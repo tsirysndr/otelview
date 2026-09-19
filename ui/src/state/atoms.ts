@@ -3,7 +3,7 @@ import { atomWithStorage } from "jotai/utils";
 import type { LogRecord } from "../lib/api";
 import type { Theme } from "../theme";
 
-export type View = "traces" | "logs" | "metrics" | "settings";
+export type View = "traces" | "logs" | "metrics" | "services" | "settings";
 
 export const viewAtom = atom<View>("traces");
 export const themeAtom = atomWithStorage<Theme>("otelview.theme", "dark");
