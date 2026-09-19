@@ -1,0 +1,22 @@
+[package]
+name = "otelview-desktop"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "otelview desktop — OpenTelemetry viewer connected to a remote otelview API"
+
+# Standalone: not part of the root cargo workspace.
+[workspace]
+
+[lib]
+name = "otelview_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-shell = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
