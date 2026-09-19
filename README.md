@@ -6,6 +6,8 @@
 
 An alternative to Datadog, Kibana, CloudWatch and SigNoz you can run anywhere: one static binary embeds the OTLP receivers, the storage engine (DuckDB) and the web UI. No cluster, no JVM, no SaaS bill. Point your apps' OTLP exporters at it and open your browser.
 
+![otelview](.github/assets/preview.png)
+
 ```
 ┌─────────────────────────────── otelview (one binary) ───────────────────────────────┐
 │                                                                                     │
@@ -22,6 +24,7 @@ An alternative to Datadog, Kibana, CloudWatch and SigNoz you can run anywhere: o
 - [Highlights](#highlights)
 - [Install](#install)
 - [Quickstart](#quickstart)
+- [Screenshots](#screenshots)
 - [Configuration](#configuration)
 - [The remote-storage APIs](#the-remote-storage-apis)
 - [Development](#development)
@@ -88,6 +91,20 @@ otelview -c otelview.yaml     # full config
 # send something to it
 export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
 ```
+
+## Screenshots
+
+**Traces** — search with a latency scatter plot, then drill into the waterfall:
+
+![traces](.github/assets/traces.png)
+
+**Logs** — live tail with severity filtering and trace correlation:
+
+![logs](.github/assets/logs.png)
+
+**Metrics** — explorer with multi-series charts for every OTLP metric type:
+
+![metrics](.github/assets/metrics.png)
 
 ## Configuration
 
