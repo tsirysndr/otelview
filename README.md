@@ -194,6 +194,10 @@ Reads and writes both speak open protocols on the gRPC port:
 cargo build --release         # single binary at target/release/otelview
 cargo test --release
 
+# or with nix (aarch64-darwin, x86_64-linux, aarch64-linux):
+nix develop                   # toolchain + bun + protoc + static duckdb env
+nix build .#otelview          # crane build with the web UI embedded
+
 cd ui
 bun run dev                   # Vite dev server proxying /api → :4319
 bun run test                  # vitest + testing-library + msw

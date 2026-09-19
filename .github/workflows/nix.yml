@@ -1,0 +1,43 @@
+name: nix
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: nix build ${{ matrix.system }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            system: aarch64-darwin
+          - os: ubuntu-24.04
+            system: x86_64-linux
+          - os: ubuntu-24.04-arm
+            system: aarch64-linux
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: DeterminateSystems/nix-installer-action@v16
+
+      - name: Setup Cachix
+        uses: cachix/cachix-action@v17
+        with:
+          name: tsirysndr
+          authToken: "${{ secrets.CACHIX_AUTH_TOKEN }}"
+
+      - name: Flake check (evaluation)
+        run: nix flake show
+
+      - name: Build otelview
+        run: nix build .#otelview -L
+
+      - name: Smoke test
+        run: ./result/bin/otelview --version
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: otelview-nix-${{ matrix.system }}
+          path: result/bin/otelview
