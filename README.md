@@ -34,6 +34,9 @@ An alternative to Datadog, Kibana, CloudWatch and SigNoz you can run anywhere: o
 ## Quickstart
 
 ```sh
+# docker
+docker run -p 4317:4317 -p 4318:4318 -p 4319:4319 ghcr.io/tsirysndr/otelview
+
 # grab a release binary (or: npm install -g otelview)
 otelview                      # in-memory storage, UI on http://127.0.0.1:4319
 otelview --storage duckdb     # persist to ./otelview.duckdb

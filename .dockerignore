@@ -1,0 +1,13 @@
+target/
+node_modules/
+ui/node_modules/
+ui/dist/
+ui/storybook-static/
+ui/src-tauri/target/
+.duckdb/
+.cargo/
+.git/
+.github/
+npm/
+*.duckdb
+*.log
