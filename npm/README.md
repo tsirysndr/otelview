@@ -1,4 +1,4 @@
-# otel-viewer
+# otelview
 
 **The open-source, self-hosted OpenTelemetry viewer — traces, metrics and logs in one fast, beautiful, single binary.**
 
@@ -7,7 +7,7 @@ An alternative to Datadog, Kibana, CloudWatch and SigNoz you can run anywhere. T
 ## Install
 
 ```sh
-npm install -g otel-viewer
+npm install -g otelview
 ```
 
 Supported platforms: macOS (Apple Silicon), Linux (x86_64, arm64).

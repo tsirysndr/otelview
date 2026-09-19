@@ -9,7 +9,7 @@ const result = spawnSync(bin, process.argv.slice(2), { stdio: "inherit" });
 if (result.error) {
   console.error(
     result.error.code === "ENOENT"
-      ? "otelview binary not found — reinstall the otel-viewer package (postinstall downloads it)"
+      ? "otelview binary not found — reinstall the otelview package (postinstall downloads it)"
       : String(result.error),
   );
   process.exit(1);

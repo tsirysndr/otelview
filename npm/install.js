@@ -16,7 +16,7 @@ function target() {
   if (platform === "darwin" && arch === "x64") return "x86_64-apple-darwin";
   if (platform === "linux" && arch === "x64") return "x86_64-unknown-linux-gnu";
   if (platform === "linux" && arch === "arm64") return "aarch64-unknown-linux-gnu";
-  throw new Error(`otel-viewer: unsupported platform ${platform}-${arch}`);
+  throw new Error(`otelview: unsupported platform ${platform}-${arch}`);
 }
 
 async function download(url, dest) {
@@ -36,13 +36,13 @@ async function main() {
   fs.mkdirSync(binDir, { recursive: true });
   const archive = path.join(binDir, asset);
 
-  console.log(`otel-viewer: downloading ${url}`);
+  console.log(`otelview: downloading ${url}`);
   await download(url, archive);
   execFileSync("tar", ["-xzf", archive, "-C", binDir]);
   fs.rmSync(archive);
   const bin = path.join(binDir, "otelview");
   fs.chmodSync(bin, 0o755);
-  console.log(`otel-viewer: installed ${bin}`);
+  console.log(`otelview: installed ${bin}`);
 }
 
 main().catch((err) => {

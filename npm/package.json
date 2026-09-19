@@ -1,5 +1,5 @@
 {
-  "name": "otel-viewer",
+  "name": "otelview",
   "version": "0.1.0",
   "description": "otelview \u2014 open-source, self-hosted OpenTelemetry viewer in a single binary (traces, metrics, logs)",
   "license": "MIT",

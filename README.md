@@ -32,7 +32,7 @@ An alternative to Datadog, Kibana, CloudWatch and SigNoz you can run anywhere: o
 ## Quickstart
 
 ```sh
-# grab a release binary (or: npm install -g otel-viewer)
+# grab a release binary (or: npm install -g otelview)
 otelview                      # in-memory storage, UI on http://127.0.0.1:4319
 otelview --storage duckdb     # persist to ./otelview.duckdb
 otelview -c otelview.yaml     # full config
@@ -41,7 +41,7 @@ otelview -c otelview.yaml     # full config
 export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
 ```
 
-`npm install -g otel-viewer` installs the same binary via GitHub releases.
+`npm install -g otelview` installs the same binary via GitHub releases.
 
 ## Configuration
 
@@ -115,7 +115,7 @@ Crate layout: `crates/model` (records), `crates/config`, `crates/storage` (backe
 
 ## Releases
 
-Tagging `v*` builds `aarch64-apple-darwin`, `x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu` and uploads tarballs to the GitHub release; the [`otel-viewer`](npm/) npm package installs the matching binary via postinstall.
+Tagging `v*` builds `aarch64-apple-darwin`, `x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu` and uploads tarballs to the GitHub release; the [`otelview`](npm/) npm package installs the matching binary via postinstall.
 
 ## License
 
