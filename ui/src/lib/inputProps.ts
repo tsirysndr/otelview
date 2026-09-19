@@ -16,6 +16,10 @@ export const fieldProps = {
   variant: "bordered",
   radius: "sm",
   size: "sm",
+  classNames: {
+    inputWrapper:
+      "border-default-300 data-[hover=true]:border-default-400 group-data-[focus=true]:border-default-500",
+  },
 } as const;
 
 export function isTauri(): boolean {

@@ -1,4 +1,4 @@
-import { Input, Select, SelectItem } from "@heroui/react";
+import { Input } from "@heroui/react";
 import { IconSearch } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
@@ -13,6 +13,7 @@ import { fieldProps, plainTextField } from "../lib/inputProps";
 import { api, type LogRecord } from "../lib/api";
 import { bodyPreview, fmtTime, severityInfo } from "../lib/format";
 import { Field } from "../components/Field";
+import { FilterSelect } from "../components/FilterSelect";
 import { ServiceChip } from "../components/ServiceChip";
 
 const SEVERITIES = [
@@ -52,31 +53,23 @@ export function LogsView() {
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 flex-wrap items-end gap-2 border-b border-divider bg-content1 p-2">
         <Field label="service" className="w-44">
-        <Select
-          {...fieldProps}
-          aria-label="Service"
-          placeholder="all services"
-          selectedKeys={filters.service ? [filters.service] : []}
-          onSelectionChange={(keys) =>
-            setFilters({ ...filters, service: (Array.from(keys)[0] as string) ?? "" })
-          }
-          items={[{ key: "", label: "all services" }, ...services.map((s) => ({ key: s, label: s }))]}
-        >
-          {(item) => <SelectItem key={item.key}>{item.label}</SelectItem>}
-        </Select>
+          <FilterSelect
+            ariaLabel="Service"
+            value={filters.service}
+            onChange={(service) => setFilters({ ...filters, service })}
+            options={[
+              { value: "", label: "all services" },
+              ...services.map((s) => ({ value: s, label: s })),
+            ]}
+          />
         </Field>
         <Field label="severity" className="w-36">
-        <Select
-          {...fieldProps}
-          aria-label="Minimum severity"
-          selectedKeys={[String(filters.minSeverity)]}
-          onSelectionChange={(keys) =>
-            setFilters({ ...filters, minSeverity: Number(Array.from(keys)[0] ?? 0) })
-          }
-          items={SEVERITIES}
-        >
-          {(item) => <SelectItem key={item.key}>{item.label}</SelectItem>}
-        </Select>
+          <FilterSelect
+            ariaLabel="Minimum severity"
+            value={String(filters.minSeverity)}
+            onChange={(v) => setFilters({ ...filters, minSeverity: Number(v) })}
+            options={SEVERITIES.map((s) => ({ value: s.key, label: s.label }))}
+          />
         </Field>
         <Field label="search" className="w-72">
         <Input

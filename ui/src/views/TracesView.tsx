@@ -1,4 +1,4 @@
-import { Button, Chip, Input, Select, SelectItem, Switch } from "@heroui/react";
+import { Button, Chip, Input, Switch } from "@heroui/react";
 import { IconArrowLeft, IconSearch } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
@@ -14,6 +14,7 @@ import { api } from "../lib/api";
 import { fmtAgo, fmtDuration } from "../lib/format";
 import { serviceNeon } from "../lib/colors";
 import { Field } from "../components/Field";
+import { FilterSelect } from "../components/FilterSelect";
 import { ScatterPlot } from "../components/ScatterPlot";
 import { ServiceChip } from "../components/ServiceChip";
 import { Waterfall } from "../components/Waterfall";
@@ -58,32 +59,26 @@ function TraceList() {
       {/* filter bar */}
       <div className="flex shrink-0 flex-wrap items-end gap-2 border-b border-divider bg-content1 p-2">
         <Field label="service" className="w-44">
-        <Select
-          {...fieldProps}
-          aria-label="Service"
-          placeholder="all services"
-          selectedKeys={filters.service ? [filters.service] : []}
-          onSelectionChange={(keys) =>
-            setFilters({ ...filters, service: (Array.from(keys)[0] as string) ?? "", operation: "" })
-          }
-          items={[{ key: "", label: "all services" }, ...services.map((s) => ({ key: s, label: s }))]}
-        >
-          {(item) => <SelectItem key={item.key}>{item.label}</SelectItem>}
-        </Select>
+          <FilterSelect
+            ariaLabel="Service"
+            value={filters.service}
+            onChange={(service) => setFilters({ ...filters, service, operation: "" })}
+            options={[
+              { value: "", label: "all services" },
+              ...services.map((s) => ({ value: s, label: s })),
+            ]}
+          />
         </Field>
         <Field label="operation" className="w-52">
-        <Select
-          {...fieldProps}
-          aria-label="Operation"
-          placeholder="all operations"
-          selectedKeys={filters.operation ? [filters.operation] : []}
-          onSelectionChange={(keys) =>
-            setFilters({ ...filters, operation: (Array.from(keys)[0] as string) ?? "" })
-          }
-          items={[{ key: "", label: "all operations" }, ...operations.map((o) => ({ key: o, label: o }))]}
-        >
-          {(item) => <SelectItem key={item.key}>{item.label}</SelectItem>}
-        </Select>
+          <FilterSelect
+            ariaLabel="Operation"
+            value={filters.operation}
+            onChange={(operation) => setFilters({ ...filters, operation })}
+            options={[
+              { value: "", label: "all operations" },
+              ...operations.map((o) => ({ value: o, label: o })),
+            ]}
+          />
         </Field>
         <Field label="attributes" className="w-56">
         <Input

@@ -5,7 +5,7 @@ import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { apiSettingsAtom } from "../state/atoms";
 import { setApiConfig } from "../lib/api";
-import { plainTextField } from "../lib/inputProps";
+import { fieldProps, plainTextField } from "../lib/inputProps";
 import { Field } from "../components/Field";
 
 /** API connection settings — mainly for the Tauri desktop app, which points
@@ -55,8 +55,8 @@ export function SettingsView() {
       <Field label="API base URL">
         <Input
           {...plainTextField}
-          variant="bordered"
-          radius="sm"
+          {...fieldProps}
+          size="md"
           aria-label="API base URL"
           placeholder="http://127.0.0.1:4319 (empty = same origin)"
           value={baseUrl}
@@ -66,8 +66,8 @@ export function SettingsView() {
       <Field label="API token">
         <Input
           {...plainTextField}
-          variant="bordered"
-          radius="sm"
+          {...fieldProps}
+          size="md"
           aria-label="API token"
           placeholder="only if auth.protect_api is enabled"
           type="password"

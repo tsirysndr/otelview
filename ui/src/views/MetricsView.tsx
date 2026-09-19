@@ -1,4 +1,4 @@
-import { Chip, Select, SelectItem } from "@heroui/react";
+import { Chip } from "@heroui/react";
 import { useQuery } from "@tanstack/react-query";
 import { useAtom, useAtomValue } from "jotai";
 import {
@@ -9,8 +9,8 @@ import {
 } from "../state/atoms";
 import { api } from "../lib/api";
 import { LineChart, type ChartSeries } from "../components/LineChart";
-import { fieldProps } from "../lib/inputProps";
 import { Field } from "../components/Field";
+import { FilterSelect } from "../components/FilterSelect";
 
 const TYPE_COLORS: Record<string, "secondary" | "primary" | "warning" | "success" | "default"> = {
   gauge: "secondary",
@@ -106,21 +106,15 @@ export function MetricsView() {
                 )}
               </div>
               <Field label="service" className="ml-auto w-44">
-                <Select
-                  {...fieldProps}
-                  aria-label="Service"
-                  placeholder="all services"
-                  selectedKeys={service ? [service] : []}
-                  onSelectionChange={(keys) =>
-                    setService((Array.from(keys)[0] as string) ?? "")
-                  }
-                  items={[
-                    { key: "", label: "all services" },
-                    ...services.map((s) => ({ key: s, label: s })),
+                <FilterSelect
+                  ariaLabel="Service"
+                  value={service}
+                  onChange={setService}
+                  options={[
+                    { value: "", label: "all services" },
+                    ...services.map((s) => ({ value: s, label: s })),
                   ]}
-                >
-                  {(item) => <SelectItem key={item.key}>{item.label}</SelectItem>}
-                </Select>
+                />
               </Field>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-3">
