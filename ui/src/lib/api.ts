@@ -192,4 +192,6 @@ export const api = {
     request<LogBucket[]>("/api/logs/histogram", p),
   logFields: (p: Record<string, unknown>) =>
     request<FieldInfo[]>("/api/logs/fields", p),
+  traceFields: (p: Record<string, unknown>) =>
+    request<FieldInfo[]>("/api/traces/fields", p),
 };

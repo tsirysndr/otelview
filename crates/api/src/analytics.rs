@@ -54,6 +54,82 @@ pub struct ServiceGraph {
 }
 
 #[derive(Debug, Serialize)]
+pub struct FieldInfo {
+    pub name: String,
+    pub count: u64,
+    pub top_values: Vec<(String, u64)>,
+}
+
+pub fn flatten_json(prefix: &str, v: &serde_json::Value, out: &mut Vec<(String, String)>) {
+    match v {
+        serde_json::Value::Object(map) => {
+            for (k, val) in map {
+                let key = if prefix.is_empty() { k.clone() } else { format!("{prefix}.{k}") };
+                flatten_json(&key, val, out);
+            }
+        }
+        serde_json::Value::String(s) => out.push((prefix.to_string(), s.clone())),
+        other => out.push((prefix.to_string(), other.to_string())),
+    }
+}
+
+/// Turn (field, value) observations into ranked FieldInfo entries.
+pub fn summarize_fields(
+    observations: impl Iterator<Item = (String, String)>,
+    max_fields: usize,
+) -> Vec<FieldInfo> {
+    let mut fields: BTreeMap<String, BTreeMap<String, u64>> = BTreeMap::new();
+    for (name, mut value) in observations {
+        if name.is_empty() {
+            continue;
+        }
+        value.truncate(60);
+        *fields.entry(name).or_default().entry(value).or_default() += 1;
+    }
+    let mut out: Vec<FieldInfo> = fields
+        .into_iter()
+        .map(|(name, values)| {
+            let count = values.values().sum();
+            let mut top: Vec<(String, u64)> = values.into_iter().collect();
+            top.sort_by_key(|(_, count)| std::cmp::Reverse(*count));
+            top.truncate(5);
+            FieldInfo { name, count, top_values: top }
+        })
+        .collect();
+    out.sort_by(|a, b| b.count.cmp(&a.count).then(a.name.cmp(&b.name)));
+    out.truncate(max_fields);
+    out
+}
+
+/// Attribute keys (span + resource) with top values, from sampled traces.
+pub async fn trace_fields(
+    storage: &DynStorage,
+    service: Option<String>,
+    start_time_min_unix_nano: Option<u64>,
+    start_time_max_unix_nano: Option<u64>,
+) -> anyhow::Result<Vec<FieldInfo>> {
+    let summaries = storage
+        .find_traces(TraceQuery {
+            service,
+            start_time_min_unix_nano,
+            start_time_max_unix_nano,
+            limit: MAX_TRACES,
+            ..Default::default()
+        })
+        .await?;
+    let mut spans = Vec::new();
+    for s in summaries {
+        spans.extend(storage.get_trace(&s.trace_id).await?);
+    }
+    let mut kvs: Vec<(String, String)> = Vec::new();
+    for s in &spans {
+        flatten_json("", &s.attributes, &mut kvs);
+        flatten_json("", &s.resource_attributes, &mut kvs);
+    }
+    Ok(summarize_fields(kvs.into_iter(), 50))
+}
+
+#[derive(Debug, Serialize)]
 pub struct LogBucket {
     pub time_unix_nano: u64,
     pub trace: u64,

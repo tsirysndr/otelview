@@ -62,6 +62,7 @@ pub fn router(cfg: &Config, storage: DynStorage) -> Router {
         .route("/service-graph", get(service_graph_handler))
         .route("/logs/histogram", get(log_histogram_handler))
         .route("/logs/fields", get(log_fields_handler))
+        .route("/traces/fields", get(trace_fields_handler))
         .route("/config", get(config_view))
         .with_state(state.clone());
     if cfg.ui.auth_enabled() || (cfg.auth.enabled() && cfg.auth.protect_api) {
@@ -271,13 +272,6 @@ async fn logs(State(state): State<ApiState>, Query(p): Query<LogParams>) -> Resp
     }
 }
 
-#[derive(serde::Serialize)]
-struct FieldInfo {
-    name: String,
-    count: u64,
-    top_values: Vec<(String, u64)>,
-}
-
 /// Kibana-style field discovery: flattened attribute keys with counts and
 /// top values, from a sample of matching logs.
 async fn log_fields_handler(
@@ -302,53 +296,48 @@ async fn log_fields_handler(
         Ok(l) => l,
         Err(e) => return internal(e),
     };
-    use std::collections::BTreeMap;
-    let mut fields: BTreeMap<String, BTreeMap<String, u64>> = BTreeMap::new();
-    let mut record = |name: &str, value: String| {
-        let mut value = value;
-        value.truncate(60);
-        *fields.entry(name.to_string()).or_default().entry(value).or_default() += 1;
-    };
-    fn flatten(prefix: &str, v: &serde_json::Value, out: &mut Vec<(String, String)>) {
-        match v {
-            serde_json::Value::Object(map) => {
-                for (k, val) in map {
-                    let key = if prefix.is_empty() { k.clone() } else { format!("{prefix}.{k}") };
-                    flatten(&key, val, out);
-                }
-            }
-            serde_json::Value::String(s) => out.push((prefix.to_string(), s.clone())),
-            other => out.push((prefix.to_string(), other.to_string())),
-        }
-    }
+    let mut kvs: Vec<(String, String)> = Vec::new();
     for l in &logs {
-        record("service", l.service_name.clone());
-        record("level", otelview_model::severity_level(l.severity_number).to_string());
+        kvs.push(("service".into(), l.service_name.clone()));
+        kvs.push((
+            "level".into(),
+            otelview_model::severity_level(l.severity_number).to_string(),
+        ));
         if !l.scope_name.is_empty() {
-            record("scope", l.scope_name.clone());
+            kvs.push(("scope".into(), l.scope_name.clone()));
         }
-        let mut kvs = Vec::new();
-        flatten("", &l.attributes, &mut kvs);
-        flatten("", &l.resource_attributes, &mut kvs);
-        for (k, v) in kvs {
-            if !k.is_empty() {
-                record(&k, v);
-            }
-        }
+        analytics::flatten_json("", &l.attributes, &mut kvs);
+        analytics::flatten_json("", &l.resource_attributes, &mut kvs);
     }
-    let mut out: Vec<FieldInfo> = fields
-        .into_iter()
-        .map(|(name, values)| {
-            let count = values.values().sum();
-            let mut top: Vec<(String, u64)> = values.into_iter().collect();
-            top.sort_by(|a, b| b.1.cmp(&a.1));
-            top.truncate(5);
-            FieldInfo { name, count, top_values: top }
-        })
-        .collect();
-    out.sort_by(|a, b| b.count.cmp(&a.count).then(a.name.cmp(&b.name)));
-    out.truncate(50);
-    Json(out).into_response()
+    Json(analytics::summarize_fields(kvs.into_iter(), 50)).into_response()
+}
+
+#[derive(Deserialize)]
+struct TraceFieldsParams {
+    service: Option<String>,
+    lookback: Option<String>,
+    start_ms: Option<u64>,
+    end_ms: Option<u64>,
+}
+
+/// Span/resource attribute discovery for the traces attribute filter.
+async fn trace_fields_handler(
+    State(state): State<ApiState>,
+    Query(p): Query<TraceFieldsParams>,
+) -> Response {
+    let min = p.start_ms.map(|ms| ms * 1_000_000).or_else(|| {
+        p.lookback
+            .as_deref()
+            .and_then(parse_lookback)
+            .map(|w| now_unix_nanos().saturating_sub(w))
+    });
+    let max = p.end_ms.map(|ms| ms * 1_000_000);
+    match analytics::trace_fields(&state.storage, p.service.filter(|s| !s.is_empty()), min, max)
+        .await
+    {
+        Ok(v) => Json(v).into_response(),
+        Err(e) => internal(e),
+    }
 }
 
 async fn metrics(State(state): State<ApiState>) -> Response {
@@ -803,6 +792,22 @@ mod tests {
             v.as_array().unwrap().iter().map(|f| f["name"].as_str().unwrap()).collect();
         assert!(names.contains(&"http.method"));
         assert!(names.contains(&"level"));
+    }
+
+    #[tokio::test]
+    async fn trace_fields_discovers_attributes() {
+        let (cfg, storage) = test_state();
+        let mut sp = span("t1", "svc", 100);
+        sp.attributes = serde_json::json!({"http.method": "GET", "http.route": "/x"});
+        sp.resource_attributes = serde_json::json!({"host.name": "app-1"});
+        storage.insert_spans(vec![sp]).await.unwrap();
+        let app = router(&cfg, storage);
+        let (status, v) = get_json(app, "/api/traces/fields").await;
+        assert_eq!(status, StatusCode::OK);
+        let names: Vec<&str> =
+            v.as_array().unwrap().iter().map(|f| f["name"].as_str().unwrap()).collect();
+        assert!(names.contains(&"http.method"));
+        assert!(names.contains(&"host.name"));
     }
 
     #[test]

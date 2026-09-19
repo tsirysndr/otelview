@@ -1,5 +1,5 @@
 import { Button, Chip, Input, Switch } from "@heroui/react";
-import { IconArrowLeft, IconRoute, IconSearch } from "@tabler/icons-react";
+import { IconArrowLeft, IconRoute } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import {
@@ -13,6 +13,7 @@ import { useTimeParams } from "../hooks/useTimeParams";
 import { api } from "../lib/api";
 import { fmtAgo, fmtDuration } from "../lib/format";
 import { serviceNeon } from "../lib/colors";
+import { AttrInput } from "../components/AttrInput";
 import { EmptyState } from "../components/EmptyState";
 import { Field } from "../components/Field";
 import { FilterSelect } from "../components/FilterSelect";
@@ -31,6 +32,12 @@ function TraceList() {
   const { data: operations = [] } = useQuery({
     queryKey: ["operations", filters.service],
     queryFn: () => api.operations(filters.service),
+  });
+  const { data: attrFields = [] } = useQuery({
+    queryKey: ["trace-fields", filters.service, timeParams],
+    queryFn: () =>
+      api.traceFields({ service: filters.service || undefined, ...timeParams }),
+    refetchInterval: live ? 10_000 : false,
   });
 
   const { data: traces = [], isLoading } = useQuery({
@@ -81,16 +88,13 @@ function TraceList() {
             ]}
           />
         </Field>
-        <Field label="attributes" className="w-56">
-        <Input
-          {...plainTextField}
-          {...fieldProps}
-          aria-label="Attribute filter"
-          placeholder="key=value or text"
-          value={filters.q}
-          onValueChange={(q) => setFilters({ ...filters, q })}
-          startContent={<IconSearch size={14} className="mr-1 shrink-0 text-default-400" />}
-        />
+        <Field label="attributes" className="min-w-64 flex-1">
+          <AttrInput
+            value={filters.q}
+            onChange={(q) => setFilters({ ...filters, q })}
+            fields={attrFields}
+            placeholder="http.method=GET or any text"
+          />
         </Field>
         <Field label="min duration (ms)" className="w-32">
         <Input
