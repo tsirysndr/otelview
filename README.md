@@ -95,6 +95,20 @@ sudo dnf install otelview                # CLI/server
 sudo dnf install otelview-desktop        # desktop app (optional)
 ```
 
+**Nix** (flakes; `aarch64-darwin`, `x86_64-linux`, `aarch64-linux` — binaries come
+from the [otelview cachix cache](https://otelview.cachix.org), no compilation):
+
+```sh
+# try it
+nix run github:tsirysndr/otelview
+
+# install into your profile
+nix profile install github:tsirysndr/otelview
+
+# accept the flake's cache settings when prompted, or enable it globally:
+cachix use otelview
+```
+
 **Pre-built binaries**: grab a tarball from the
 [releases page](https://github.com/tsirysndr/otelview/releases); the desktop
 app ships there too (`.dmg`, `.AppImage`, `.deb`).

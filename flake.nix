@@ -1,6 +1,13 @@
 {
   description = "otelview — open-source, self-hosted OpenTelemetry viewer in a single binary";
 
+  nixConfig = {
+    extra-substituters = [ "https://otelview.cachix.org" ];
+    extra-trusted-public-keys = [
+      "otelview.cachix.org-1:+Twrf64f2rg+cTAYU2MikV/hGMpHxnHK6l6yLvrseP4="
+    ];
+  };
+
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     crane.url = "github:ipetkov/crane";
