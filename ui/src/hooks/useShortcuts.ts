@@ -76,16 +76,18 @@ export function useShortcuts() {
         if (openTrace) setOpenTrace(null);
         return;
       }
+      // "?" toggles the help modal even while it is open.
+      if (e.key === "?") {
+        e.preventDefault();
+        setHelp((v) => !v);
+        return;
+      }
       if (palette || help) return;
 
       switch (e.key) {
         case "/":
           e.preventDefault();
           setPalette(true);
-          break;
-        case "?":
-          e.preventDefault();
-          setHelp((v) => !v);
           break;
         case "1":
           setView("traces");
