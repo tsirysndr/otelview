@@ -82,10 +82,10 @@
             '';
             outputHashAlgo = "sha256";
             outputHashMode = "recursive";
-            # NAR hash of the dist output (recompute after UI changes:
-            # `nix hash path ui/dist` on a fresh `bun run build`, or take the
-            # "got:" hash from the CI mismatch error).
-            outputHash = "sha256-lBcEwlukgzkbPh4TCXNXlCKX7QvXO3ERP0ds70DfDkU=";
+            # NAR hash of the sandbox-built dist. After UI changes, re-run
+            # the nix workflow and paste the "got:" hash from the mismatch
+            # error (the local `nix hash path ui/dist` can differ slightly).
+            outputHash = "sha256-8jzYCyn8fjQqZqL7kYMyY8tyTkfuNkag0h6DwYIVouA=";
           };
 
           # Keep proto files (tonic codegen inputs) alongside the cargo sources.
