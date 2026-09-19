@@ -1,7 +1,7 @@
 {
   "name": "otel-viewer",
   "version": "0.1.0",
-  "description": "otelview — open-source, self-hosted OpenTelemetry viewer in a single binary (traces, metrics, logs)",
+  "description": "otelview \u2014 open-source, self-hosted OpenTelemetry viewer in a single binary (traces, metrics, logs)",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -25,11 +25,19 @@
   },
   "files": [
     "install.js",
-    "bin/otelview.js"
+    "bin/otelview.js",
+    "README.md"
   ],
-  "os": ["darwin", "linux"],
-  "cpu": ["arm64", "x64"],
+  "os": [
+    "darwin",
+    "linux"
+  ],
+  "cpu": [
+    "arm64",
+    "x64"
+  ],
   "engines": {
     "node": ">=18"
-  }
+  },
+  "homepage": "https://github.com/tsirysndr/otel-viewer#readme"
 }
