@@ -64,7 +64,7 @@ export function IconRail() {
   };
 
   return (
-    <nav className="flex w-40 shrink-0 flex-col border-r border-divider bg-content1 py-1.5">
+    <nav className="flex w-52 shrink-0 flex-col border-r border-divider bg-content1 py-1.5">
       {ITEMS.map(({ view: v, label, icon }) => (
         <RailButton
           key={v}
