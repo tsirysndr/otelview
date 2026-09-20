@@ -15,6 +15,11 @@ auth:
 
 storage:
   backend: duckdb            # memory | duckdb | jaeger | remote
+  # Delete telemetry older than this (36h, 7d, 2w, 1mo — months are 30
+  # days). Unset keeps everything forever. Honoured by the duckdb backend;
+  # the remote postgres storage has its own RETENTION knob.
+  retention: 7d
+  retention_sweep_interval: 1h
   duckdb:
     path: otelview.duckdb
   memory:

@@ -409,4 +409,16 @@ listen = "0.0.0.0:8080"
         c.storage.retention_sweep_interval = "1h".into();
         c.validate().unwrap();
     }
+
+    /// The shipped example configs must load through the real parser —
+    /// deny_unknown_fields makes a doc-only field a runtime refusal.
+    #[test]
+    fn example_configs_parse() {
+        let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../../examples");
+        for name in ["otelview.yaml", "otelview.toml"] {
+            let cfg = Config::load(Path::new(&format!("{root}/{name}")))
+                .unwrap_or_else(|e| panic!("{name}: {e:#}"));
+            cfg.validate().unwrap_or_else(|e| panic!("{name}: {e:#}"));
+        }
+    }
 }

@@ -210,6 +210,8 @@ auth:
 
 storage:
   backend: duckdb              # memory | duckdb | jaeger | remote
+  retention: 7d                # delete older telemetry (36h/7d/2w/1mo); unset = keep forever
+  retention_sweep_interval: 1h # how often the sweep runs
   memory:
     max_spans: 200000
     max_logs: 200000

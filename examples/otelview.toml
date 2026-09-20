@@ -15,6 +15,11 @@ protect_api = false
 
 [storage]
 backend = "remote"           # traces+logs+metrics from another otelview
+# Delete telemetry older than this (36h, 7d, 2w, 1mo). Unset keeps
+# everything. Honoured by the duckdb backend; a remote backend's server
+# manages its own retention.
+# retention = "7d"
+# retention_sweep_interval = "1h"
 
 [storage.remote]
 endpoint = "http://other-host:4317"
