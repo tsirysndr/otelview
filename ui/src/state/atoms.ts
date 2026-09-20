@@ -1,5 +1,6 @@
 import { atom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
+import { atomFamily } from "jotai-family";
 import type { LogRecord } from "../lib/api";
 import type { Theme } from "../theme";
 
@@ -71,6 +72,14 @@ export const logFiltersAtom = atom<LogFilters>({
   search: "",
   limit: 300,
 });
+
+/** Recent-query history per search input, persisted in localStorage and
+ * shared across the app. Keyed by the input's `historyKey` (e.g.
+ * "traces.attributes", "logs.kql") — same storage key format the old
+ * hand-rolled localStorage module used, so existing history keeps working. */
+export const queryHistoryFamily = atomFamily((key: string) =>
+  atomWithStorage<string[]>(`otelview.history.${key}`, []),
+);
 
 /** Metrics explorer selection. */
 export const selectedMetricAtom = atom<string | null>(null);

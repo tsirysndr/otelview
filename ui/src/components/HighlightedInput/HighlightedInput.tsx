@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { IconSearch, IconX } from "@tabler/icons-react";
-import { loadHistory, pushHistory } from "../../lib/history";
+import { useAtom } from "jotai";
+import { RESET } from "jotai/utils";
+import { IconSearch, IconTrash, IconX } from "@tabler/icons-react";
+import { withAppliedQuery } from "../../lib/history";
 import { plainTextField } from "../../lib/inputProps";
+import { queryHistoryFamily } from "../../state/atoms";
 
 export interface HlToken {
   text: string;
@@ -15,6 +18,9 @@ export interface Suggestion {
   insert: string;
   /** Keep the dropdown open after accepting (e.g. `field:` prefixes). */
   reopen?: boolean;
+  /** Replace the whole input value instead of just the token at `from`
+   * (recent-query picks, which are a full query, not a token). */
+  replaceAll?: boolean;
 }
 
 export interface SuggestResult {
@@ -52,31 +58,35 @@ export function HighlightedInput({
   const [cursor, setCursor] = useState(0);
   const [selected, setSelected] = useState(0);
 
-  const [history, setHistory] = useState<string[]>(() =>
-    historyKey ? loadHistory(historyKey) : [],
-  );
+  // atomFamily needs a concrete key on every render; historyKey-less inputs
+  // just get an inert, never-written slot.
+  const [history, setHistory] = useAtom(queryHistoryFamily(historyKey ?? ""));
 
   // A query counts as applied when the user commits it — Enter outside the
   // dropdown, or leaving the field with text in it. Filters here apply live
   // while typing, so there is no submit event to hook instead.
   const recordApplied = () => {
     if (historyKey && value.trim()) {
-      setHistory(pushHistory(historyKey, value));
+      setHistory((h) => withAppliedQuery(h, value));
     }
   };
+
+  const clearAllHistory = () => setHistory(RESET);
 
   const tokens = useMemo(() => renderTokens(value), [renderTokens, value]);
   const { from, items } = useMemo(() => {
     if (!open) return { from: 0, items: [] };
-    // An empty focused input offers the recent queries; anything typed
-    // switches to the grammar's own completions.
-    if (value.trim() === "" && history.length > 0) {
-      return {
-        from: 0,
-        items: history.map((q) => ({ label: q, detail: "recent", insert: q })),
-      };
-    }
-    return suggest(value, cursor);
+    const trimmed = value.trim();
+    // Recent exact queries that match what's typed so far, offered as
+    // full-value replacements ahead of the grammar's own completions.
+    const historyItems: Suggestion[] = history
+      .filter((q) => q !== value && (trimmed === "" || q.toLowerCase().includes(trimmed.toLowerCase())))
+      .map((q) => ({ label: q, detail: "recent", insert: q, replaceAll: true }));
+    // An empty focused input offers only the recent queries; anything typed
+    // adds the grammar's own completions alongside matching history.
+    if (trimmed === "") return { from: 0, items: historyItems };
+    const grammar = suggest(value, cursor);
+    return { from: grammar.from, items: [...historyItems, ...grammar.items] };
   }, [open, suggest, value, cursor, history]);
 
   useEffect(() => setSelected(0), [items.length, from]);
@@ -88,8 +98,10 @@ export function HighlightedInput({
   };
 
   const accept = (s: Suggestion) => {
-    const next = value.slice(0, from) + s.insert + value.slice(cursor);
-    const caret = from + s.insert.length;
+    const start = s.replaceAll ? 0 : from;
+    const end = s.replaceAll ? value.length : cursor;
+    const next = value.slice(0, start) + s.insert + value.slice(end);
+    const caret = start + s.insert.length;
     onChange(next);
     requestAnimationFrame(() => {
       inputRef.current?.setSelectionRange(caret, caret);
@@ -203,31 +215,66 @@ export function HighlightedInput({
         )}
       </div>
 
-      {open && items.length > 0 && (
-        <div className="absolute left-0 top-9 z-40 max-h-64 w-80 overflow-y-auto rounded-large border border-content3 bg-content1 p-1">
-          {items.map((s, i) => (
-            <button
-              key={`${s.label}-${i}`}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                accept(s);
-              }}
-              className={`flex w-full items-baseline justify-between gap-3 rounded-md px-2 py-1 text-left text-xs ${
-                i === selected
-                  ? "bg-[rgba(255,42,109,0.16)] text-foreground shadow-[inset_2px_0_0_#ff2a6d]"
-                  : "text-default-600 hover:bg-content2"
-              }`}
-            >
-              <span className="truncate font-mono">{s.label}</span>
-              {s.detail && (
-                <span className="shrink-0 text-[10px] text-default-400">{s.detail}</span>
+      {open && (items.length > 0 || (historyKey && history.length > 0)) && (
+        <>
+          {/* Mobile and tablet get a bottom sheet with a dismiss scrim — an
+              absolutely-positioned 320px dropdown doesn't work with an
+              on-screen keyboard eating half the viewport. Desktop (lg+)
+              keeps the anchored dropdown. */}
+          <div
+            className="fixed inset-0 z-30 bg-black/50 lg:hidden"
+            onClick={() => setOpen(false)}
+          />
+          <div
+            className="fixed inset-x-0 bottom-0 z-40 max-h-[70vh] overflow-y-auto rounded-t-large
+              border-t border-content3 bg-content1 p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]
+              lg:absolute lg:inset-x-auto lg:inset-y-auto lg:left-0 lg:top-9 lg:max-h-64 lg:w-80
+              lg:rounded-large lg:border lg:p-1"
+          >
+            {items.length === 0 && (
+              <p className="px-2 py-1 text-[11px] text-default-400">no matches</p>
+            )}
+            {items.map((s, i) => (
+              <button
+                key={`${s.label}-${i}`}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  accept(s);
+                }}
+                className={`flex w-full items-baseline justify-between gap-3 rounded-md px-2 py-1 text-left text-xs ${
+                  i === selected
+                    ? "bg-[rgba(255,42,109,0.16)] text-foreground shadow-[inset_2px_0_0_#ff2a6d]"
+                    : "text-default-600 hover:bg-content2"
+                }`}
+              >
+                <span className="truncate font-mono">{s.label}</span>
+                {s.detail && (
+                  <span className="shrink-0 text-[10px] text-default-400">{s.detail}</span>
+                )}
+              </button>
+            ))}
+            <div className="flex items-center justify-between gap-2 border-t border-divider/60 px-2 pt-1 text-[9px] text-default-400">
+              <span>↑↓ navigate · tab/enter accept · esc close</span>
+              {historyKey && history.length > 0 && (
+                <button
+                  type="button"
+                  aria-label="Clear history"
+                  onMouseDown={(e) => {
+                    // mousedown, not click: same blur-timing reason as the
+                    // input's clear button above.
+                    e.preventDefault();
+                    clearAllHistory();
+                  }}
+                  title="Clear recent search history"
+                  className="flex shrink-0 items-center gap-0.5 text-default-400 transition-colors hover:text-danger"
+                >
+                  <IconTrash size={11} />
+                  clear history
+                </button>
               )}
-            </button>
-          ))}
-          <div className="border-t border-divider/60 px-2 pt-1 text-[9px] text-default-400">
-            ↑↓ navigate · tab/enter accept · esc close
+            </div>
           </div>
-        </div>
+        </>
       )}
     </div>
   );

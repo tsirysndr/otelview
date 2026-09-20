@@ -15,6 +15,7 @@ import {
   IconSearch,
   IconServer,
   IconSettings,
+  IconX,
 } from "@tabler/icons-react";
 import {
   helpOpenAtom,
@@ -106,15 +107,16 @@ export function CommandPalette() {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 p-4 pt-[15vh]"
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 lg:p-4 lg:pt-[15vh]"
       onClick={() => setOpen(false)}
     >
       <Command
         label="Search and commands"
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-xl overflow-hidden rounded-large border border-content3 bg-content1"
+        className="flex h-full w-full flex-col overflow-hidden bg-content1
+          lg:h-auto lg:max-w-xl lg:rounded-large lg:border lg:border-content3"
       >
-        <div className="flex items-center gap-2 border-b border-content3 px-4">
+        <div className="flex shrink-0 items-center gap-2 border-b border-content3 px-4">
           <IconSearch size={16} className="shrink-0 text-default-400" />
           <Command.Input
             {...plainTextField}
@@ -124,8 +126,16 @@ export function CommandPalette() {
             placeholder="Search traces, services, metrics — or type a command…"
             className="w-full bg-transparent py-3 text-sm text-foreground outline-none placeholder:text-default-400"
           />
+          <button
+            type="button"
+            aria-label="Close"
+            onClick={() => setOpen(false)}
+            className="shrink-0 rounded p-1 text-default-400 hover:text-foreground lg:hidden"
+          >
+            <IconX size={18} />
+          </button>
         </div>
-        <Command.List className="max-h-96 overflow-y-auto p-2">
+        <Command.List className="min-h-0 flex-1 overflow-y-auto p-2 lg:max-h-96 lg:flex-none">
           <Command.Empty className="px-3 py-6 text-center text-sm text-default-400">
             No results.
           </Command.Empty>

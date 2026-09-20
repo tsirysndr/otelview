@@ -1,25 +1,6 @@
-import {
-  IconAlignLeft,
-  IconChartLine,
-  IconRoute,
-  IconSettings,
-  IconTopologyStar3,
-} from "@tabler/icons-react";
-import { useAtom, useSetAtom } from "jotai";
-import {
-  openTraceIdAtom,
-  selectedLogAtom,
-  selectedSpanIdAtom,
-  viewAtom,
-  type View,
-} from "../../state/atoms";
-
-const ITEMS: { view: View; label: string; icon: typeof IconRoute }[] = [
-  { view: "traces", label: "Traces", icon: IconRoute },
-  { view: "logs", label: "Logs", icon: IconAlignLeft },
-  { view: "metrics", label: "Metrics", icon: IconChartLine },
-  { view: "services", label: "Services", icon: IconTopologyStar3 },
-];
+import { useAtomValue } from "jotai";
+import { viewAtom } from "../../state/atoms";
+import { NAV_ITEMS, SETTINGS_NAV_ITEM, useSwitchView, type NavItem } from "../../hooks/useNav";
 
 function RailButton({
   active,
@@ -30,7 +11,7 @@ function RailButton({
   active: boolean;
   label: string;
   onPress: () => void;
-  icon: typeof IconRoute;
+  icon: NavItem["icon"];
 }) {
   return (
     <button
@@ -51,23 +32,15 @@ function RailButton({
   );
 }
 
-/** Left sidebar: always shows icon + title (never minified). */
+/** Left sidebar on desktop (lg+): always shows icon + title, never
+ * minified. Hidden on mobile/tablet, where BottomNav takes over. */
 export function IconRail() {
-  const [view, setView] = useAtom(viewAtom);
-  const setOpenTrace = useSetAtom(openTraceIdAtom);
-  const setSelectedSpan = useSetAtom(selectedSpanIdAtom);
-  const setSelectedLog = useSetAtom(selectedLogAtom);
-
-  const switchTo = (v: View) => {
-    setView(v);
-    if (v !== "traces") setOpenTrace(null);
-    setSelectedSpan(null);
-    setSelectedLog(null);
-  };
+  const view = useAtomValue(viewAtom);
+  const switchTo = useSwitchView();
 
   return (
-    <nav className="flex w-52 shrink-0 flex-col border-r border-divider bg-content1 py-1.5">
-      {ITEMS.map(({ view: v, label, icon }) => (
+    <nav className="hidden w-52 shrink-0 flex-col border-r border-divider bg-content1 py-1.5 lg:flex">
+      {NAV_ITEMS.map(({ view: v, label, icon }) => (
         <RailButton
           key={v}
           active={view === v}
@@ -78,10 +51,10 @@ export function IconRail() {
       ))}
       <div className="flex-1" />
       <RailButton
-        active={view === "settings"}
-        label="Settings"
-        icon={IconSettings}
-        onPress={() => switchTo("settings")}
+        active={view === SETTINGS_NAV_ITEM.view}
+        label={SETTINGS_NAV_ITEM.label}
+        icon={SETTINGS_NAV_ITEM.icon}
+        onPress={() => switchTo(SETTINGS_NAV_ITEM.view)}
       />
     </nav>
   );

@@ -7,6 +7,7 @@ import { useShortcuts } from "./hooks/useShortcuts";
 import { AuthGate } from "./components/AuthGate";
 import { TopBar } from "./components/TopBar";
 import { IconRail } from "./components/IconRail";
+import { BottomNav } from "./components/BottomNav";
 import { StatusLine } from "./components/StatusLine";
 import { Inspector } from "./components/Inspector";
 import { CommandPalette } from "./components/CommandPalette";
@@ -45,6 +46,7 @@ export default function App() {
           </main>
           <Inspector />
         </div>
+        <BottomNav />
         <StatusLine />
         <CommandPalette />
         <HelpModal />

@@ -185,8 +185,11 @@ export function Inspector() {
   if (!inspectorOpen || (!span && !showLog)) return null;
 
   return (
-    <aside className="flex w-[360px] shrink-0 flex-col border-l border-divider bg-content1">
-      <div className="flex h-8 shrink-0 items-center justify-between border-b border-divider px-2">
+    <aside
+      className="fixed inset-0 z-40 flex flex-col bg-content1
+        lg:static lg:inset-auto lg:z-auto lg:w-[360px] lg:shrink-0 lg:border-l lg:border-divider"
+    >
+      <div className="flex h-10 shrink-0 items-center justify-between border-b border-divider px-2 lg:h-8">
         <span className="text-[11px] uppercase tracking-wider text-default-500">
           {span ? "span" : "log record"}
         </span>

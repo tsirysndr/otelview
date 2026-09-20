@@ -1,31 +1,13 @@
-/** Recently applied search queries, per input, persisted in localStorage.
- *
- * A tiny module rather than component state so the logic — dedupe to the
- * front, cap, survive malformed storage — is testable on its own. */
+/** Merge logic for recently applied search queries. The state itself lives
+ * in a jotai atom family backed by localStorage (`queryHistoryFamily` in
+ * state/atoms.ts) — this module only holds the pure dedupe/cap rule so it's
+ * testable without mounting anything. */
 
-const LIMIT = 15;
-
-const storageKey = (key: string) => `otelview.history.${key}`;
-
-export function loadHistory(key: string): string[] {
-  try {
-    const raw = localStorage.getItem(storageKey(key));
-    const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed.filter((q) => typeof q === "string") : [];
-  } catch {
-    return [];
-  }
-}
+export const HISTORY_LIMIT = 15;
 
 /** Record one applied query: most recent first, no duplicates, capped. */
-export function pushHistory(key: string, query: string): string[] {
+export function withAppliedQuery(history: string[], query: string): string[] {
   const q = query.trim();
-  if (!q) return loadHistory(key);
-  const next = [q, ...loadHistory(key).filter((h) => h !== q)].slice(0, LIMIT);
-  try {
-    localStorage.setItem(storageKey(key), JSON.stringify(next));
-  } catch {
-    // Storage full or denied — history is a convenience, never an error.
-  }
-  return next;
+  if (!q) return history;
+  return [q, ...history.filter((h) => h !== q)].slice(0, HISTORY_LIMIT);
 }

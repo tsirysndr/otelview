@@ -150,8 +150,9 @@ export function TimeRangePicker({ align = "right" }: { align?: "left" | "right" 
 
       {open && (
         <div
-          className={`otelview-rdp absolute top-9 z-40 flex flex-col gap-2 rounded-large border border-content3 bg-content1 p-3 ${
-            align === "right" ? "right-0" : "left-0"
+          className={`otelview-rdp fixed inset-0 z-40 flex flex-col gap-2 overflow-y-auto bg-content1 p-3
+            lg:absolute lg:inset-auto lg:top-9 lg:rounded-large lg:border lg:border-content3 ${
+            align === "right" ? "lg:right-0" : "lg:left-0"
           }`}
         >
           <DayPicker

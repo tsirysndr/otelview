@@ -1,7 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react";
 import { useState } from "react";
 import type { FieldInfo } from "../../lib/api";
-import { pushHistory } from "../../lib/history";
 import { KqlInput } from "./KqlInput";
 
 const meta: Meta = { title: "Search/KqlInput" };
@@ -64,9 +63,15 @@ export const InvalidQuery: StoryObj = {
 };
 
 function WithHistoryHarness() {
-  // Seed the popup's memory, then focus the empty input to see it.
-  pushHistory("storybook.kql", "status_code:>=500");
-  pushHistory("storybook.kql", 'service.name:"rocksky-api" and http.method:POST');
+  // Seed the popup's memory (same localStorage shape the jotai-backed
+  // history atom reads), then focus the empty input to see it.
+  localStorage.setItem(
+    "otelview.history.storybook.kql",
+    JSON.stringify([
+      'service.name:"rocksky-api" and http.method:POST',
+      "status_code:>=500",
+    ]),
+  );
   const [value, setValue] = useState("");
   return (
     <div className="max-w-xl">

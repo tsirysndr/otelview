@@ -36,7 +36,7 @@ export function TopBar() {
   return (
     <header
       data-tauri-drag-region
-      className={`flex h-11 shrink-0 items-center gap-3 border-b border-divider bg-content1 pr-3 ${
+      className={`flex h-11 shrink-0 items-center gap-3 overflow-x-auto border-b border-divider bg-content1 pr-3 ${
         macDesktop ? "pl-20" : "pl-2"
       }`}
     >
@@ -53,7 +53,7 @@ export function TopBar() {
       <TimeRangePicker />
 
       <Tooltip content="Auto-refresh (l)" delay={400}>
-        <div className="flex items-center gap-1.5">
+        <div className="flex shrink-0 items-center gap-1.5">
           <Switch
             size="sm"
             isSelected={live}
@@ -61,7 +61,9 @@ export function TopBar() {
             aria-label="Live"
             classNames={switchClassNames}
           />
-          <span className={`text-xs ${live ? "text-neon-green" : "text-default-500"}`}>
+          <span
+            className={`hidden text-xs sm:inline ${live ? "text-neon-green" : "text-default-500"}`}
+          >
             live
           </span>
         </div>
@@ -84,10 +86,13 @@ export function TopBar() {
         variant="light"
         radius="sm"
         aria-label="Refresh"
+        className="shrink-0"
         onPress={() => qc.invalidateQueries()}
       >
         <IconRefresh size={16} />
       </Button>
+      {/* The rail toggle only applies to the desktop sidebar — mobile and
+          tablet get the always-on bottom nav instead. */}
       <Tooltip content={rail ? "Hide rail (⌘B)" : "Show rail (⌘B)"} delay={400}>
         <Button
           isIconOnly
@@ -95,7 +100,7 @@ export function TopBar() {
           variant="light"
           radius="sm"
           aria-label="Toggle left rail"
-          className="text-default-500 data-[hover=true]:text-secondary"
+          className="hidden shrink-0 text-default-500 data-[hover=true]:text-secondary lg:flex"
           onPress={() => setRail(!rail)}
         >
           {rail ? <IconLayoutSidebarFilled size={18} /> : <IconLayoutSidebar size={18} />}
@@ -111,7 +116,7 @@ export function TopBar() {
           variant="light"
           radius="sm"
           aria-label="Toggle inspector panel"
-          className="text-default-500 data-[hover=true]:text-secondary"
+          className="shrink-0 text-default-500 data-[hover=true]:text-secondary"
           onPress={() => setInspector(!inspector)}
         >
           {inspector ? (
@@ -127,6 +132,7 @@ export function TopBar() {
         variant="light"
         radius="sm"
         aria-label="Toggle theme"
+        className="shrink-0"
         onPress={() => setTheme(theme === "dark" ? "light" : "dark")}
       >
         {theme === "dark" ? <IconSun size={16} /> : <IconMoon size={16} />}
