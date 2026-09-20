@@ -33,10 +33,15 @@ export function TopBar() {
   // so the bar doubles as the drag region and leaves room for them.
   const macDesktop = isTauri() && isMac();
 
+  // The horizontal scroll below is a narrow-screen affordance only. A scroll
+  // container clips absolutely-positioned descendants, which would hide the
+  // time-range popover living inside this bar — so it is switched off at lg,
+  // where that popover is absolute. Below lg the popover is `fixed` and
+  // escapes the clip, which is how both behaviours coexist.
   return (
     <header
       data-tauri-drag-region
-      className={`flex h-11 shrink-0 items-center gap-3 overflow-x-auto border-b border-divider bg-content1 pr-3 ${
+      className={`flex h-11 shrink-0 items-center gap-3 overflow-x-auto border-b border-divider bg-content1 pr-3 lg:overflow-visible ${
         macDesktop ? "pl-20" : "pl-2"
       }`}
     >
