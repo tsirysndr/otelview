@@ -40,10 +40,14 @@ export function useCorrelate() {
   const setInspectorOpen = useSetAtom(inspectorOpenAtom);
 
   /** Centre the window on `unixNano`, so the destination is never empty
-   * purely because of the range that happened to be selected. */
+   * purely because of the range that happened to be selected.
+   *
+   * Nanoseconds do not divide cleanly into milliseconds, and the API takes
+   * `start_ms`/`end_ms` as integers — an unrounded value is serialized as
+   * "1758397850123.4568" and rejected outright. */
   const focusTime = (unixNano?: number) => {
     if (!unixNano) return;
-    const ms = unixNano / 1_000_000;
+    const ms = Math.floor(unixNano / 1_000_000);
     setCustomRange({ from: ms - CONTEXT_MS, to: ms + CONTEXT_MS });
   };
 

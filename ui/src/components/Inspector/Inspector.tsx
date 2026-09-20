@@ -12,6 +12,7 @@ import {
 import { api, type SpanRecord } from "../../lib/api";
 import { fmtDateTime, fmtDuration, fmtTime, severityInfo } from "../../lib/format";
 import { useCorrelate } from "../../hooks/useCorrelate";
+import { hasTraceId, useSignalLinks } from "../../hooks/useSignalLinks";
 import { KeyValueTable } from "../KeyValueTable";
 import { ServiceChip } from "../ServiceChip";
 
@@ -35,6 +36,12 @@ function StatusChip({ span }: { span: SpanRecord }) {
 
 function SpanDetails({ span }: { span: SpanRecord }) {
   const correlate = useCorrelate();
+  const links = useSignalLinks({
+    traceId: span.trace_id,
+    spanId: span.span_id,
+    service: span.service_name,
+  });
+  const anyLink = links.hasSpanLogs || links.hasTraceLogs || links.hasServiceMetrics;
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-3">
       <div>
@@ -70,47 +77,55 @@ function SpanDetails({ span }: { span: SpanRecord }) {
         )}
       </dl>
 
-      {/* The three signals meet at this span: its own logs, and the wider
-          behaviour of the service it ran in. */}
-      <div className="flex flex-wrap gap-1.5">
-        <Button
-          size="sm"
-          variant="flat"
-          startContent={<IconAlignLeft size={14} />}
-          onPress={() =>
-            correlate.traceToLogs(span.trace_id, {
-              spanId: span.span_id,
-              atUnixNano: span.start_time_unix_nano,
-            })
-          }
-        >
-          logs for this span
-        </Button>
-        <Button
-          size="sm"
-          variant="flat"
-          startContent={<IconAlignLeft size={14} />}
-          onPress={() =>
-            correlate.traceToLogs(span.trace_id, {
-              atUnixNano: span.start_time_unix_nano,
-            })
-          }
-        >
-          whole trace
-        </Button>
-        <Button
-          size="sm"
-          variant="flat"
-          startContent={<IconChartLine size={14} />}
-          onPress={() =>
-            correlate.serviceToMetrics(span.service_name, {
-              atUnixNano: span.start_time_unix_nano,
-            })
-          }
-        >
-          {span.service_name} metrics
-        </Button>
-      </div>
+      {/* The three signals meet at this span — but only the jumps that lead
+          somewhere are offered, so none of them is a dead end. */}
+      {anyLink && (
+        <div className="flex flex-wrap gap-1.5">
+          {links.hasSpanLogs && (
+            <Button
+              size="sm"
+              variant="flat"
+              startContent={<IconAlignLeft size={14} />}
+              onPress={() =>
+                correlate.traceToLogs(span.trace_id, {
+                  spanId: span.span_id,
+                  atUnixNano: span.start_time_unix_nano,
+                })
+              }
+            >
+              logs for this span
+            </Button>
+          )}
+          {links.hasTraceLogs && (
+            <Button
+              size="sm"
+              variant="flat"
+              startContent={<IconAlignLeft size={14} />}
+              onPress={() =>
+                correlate.traceToLogs(span.trace_id, {
+                  atUnixNano: span.start_time_unix_nano,
+                })
+              }
+            >
+              {links.hasSpanLogs ? "whole trace" : "logs for this trace"}
+            </Button>
+          )}
+          {links.hasServiceMetrics && (
+            <Button
+              size="sm"
+              variant="flat"
+              startContent={<IconChartLine size={14} />}
+              onPress={() =>
+                correlate.serviceToMetrics(span.service_name, {
+                  atUnixNano: span.start_time_unix_nano,
+                })
+              }
+            >
+              {span.service_name} metrics
+            </Button>
+          )}
+        </div>
+      )}
 
       <Tabs size="sm" variant="underlined" aria-label="Span detail sections">
         <Tab key="attrs" title={`Attributes (${Object.keys(span.attributes ?? {}).length})`}>
@@ -143,21 +158,27 @@ function SpanDetails({ span }: { span: SpanRecord }) {
             <p className="px-1 py-2 text-xs text-default-400">none</p>
           ) : (
             <div className="flex flex-col gap-1 text-xs">
-              {span.links.map((l, i) => (
-                <button
-                  key={i}
-                  onClick={() =>
-                    correlate.logToTrace(l.trace_id, { spanId: l.span_id || undefined })
-                  }
-                  title="open the linked trace"
-                  className="flex items-center gap-1.5 break-all rounded-md bg-content2 p-2 text-left transition-colors hover:text-neon-cyan"
-                >
-                  <IconRoute size={13} className="shrink-0" />
-                  <span>
+              {span.links.map((l, i) =>
+                hasTraceId(l.trace_id) ? (
+                  <button
+                    key={i}
+                    onClick={() =>
+                      correlate.logToTrace(l.trace_id, { spanId: l.span_id || undefined })
+                    }
+                    title="open the linked trace"
+                    className="flex items-center gap-1.5 break-all rounded-md bg-content2 p-2 text-left transition-colors hover:text-neon-cyan"
+                  >
+                    <IconRoute size={13} className="shrink-0" />
+                    <span>
+                      trace {l.trace_id} · span {l.span_id}
+                    </span>
+                  </button>
+                ) : (
+                  <div key={i} className="break-all rounded-md bg-content2 p-2">
                     trace {l.trace_id} · span {l.span_id}
-                  </span>
-                </button>
-              ))}
+                  </div>
+                ),
+              )}
             </div>
           )}
         </Tab>
@@ -169,9 +190,13 @@ function SpanDetails({ span }: { span: SpanRecord }) {
 function LogDetails() {
   const log = useAtomValue(selectedLogAtom);
   const correlate = useCorrelate();
+  const links = useSignalLinks({
+    traceId: log?.trace_id,
+    service: log?.service_name,
+  });
   if (!log) return null;
   const sev = severityInfo(log.severity_number, log.severity_text);
-  const hasTrace = log.trace_id && !/^0*$/.test(log.trace_id);
+  const hasTrace = hasTraceId(log.trace_id);
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-3">
       <div className="flex flex-wrap items-center gap-1.5">
@@ -188,6 +213,7 @@ function LogDetails() {
         {typeof log.body === "string" ? log.body : JSON.stringify(log.body, null, 2)}
       </pre>
 
+      {(hasTrace || links.hasServiceMetrics) && (
       <div className="flex flex-wrap gap-1.5">
         {hasTrace && (
           <Button
@@ -205,19 +231,22 @@ function LogDetails() {
             open trace {log.trace_id.slice(0, 12)}…
           </Button>
         )}
-        <Button
-          size="sm"
-          variant="flat"
-          startContent={<IconChartLine size={14} />}
-          onPress={() =>
-            correlate.serviceToMetrics(log.service_name, {
-              atUnixNano: log.time_unix_nano,
-            })
-          }
-        >
-          {log.service_name} metrics
-        </Button>
+        {links.hasServiceMetrics && (
+          <Button
+            size="sm"
+            variant="flat"
+            startContent={<IconChartLine size={14} />}
+            onPress={() =>
+              correlate.serviceToMetrics(log.service_name, {
+                atUnixNano: log.time_unix_nano,
+              })
+            }
+          >
+            {log.service_name} metrics
+          </Button>
+        )}
       </div>
+      )}
 
       <Tabs size="sm" variant="underlined" aria-label="Log detail sections">
         <Tab key="attrs" title={`Attributes (${Object.keys(log.attributes ?? {}).length})`}>
