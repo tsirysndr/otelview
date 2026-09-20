@@ -127,12 +127,14 @@ export function KqlInput({
   fields,
   invalid,
   placeholder,
+  historyKey,
 }: {
   value: string;
   onChange: (v: string) => void;
   fields: FieldInfo[];
   invalid?: boolean;
   placeholder?: string;
+  historyKey?: string;
 }) {
   const renderTokens = useCallback(
     (v: string): HlToken[] =>
@@ -152,6 +154,7 @@ export function KqlInput({
       invalid={invalid}
       placeholder={placeholder}
       ariaLabel="KQL query"
+      historyKey={historyKey}
     />
   );
 }

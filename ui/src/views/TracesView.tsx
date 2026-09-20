@@ -94,6 +94,7 @@ function TraceList() {
         </Field>
         <Field label="attributes" className="min-w-64 flex-1">
           <AttrInput
+            historyKey="traces.attributes"
             value={filters.q}
             onChange={(q) => setFilters({ ...filters, q })}
             fields={attrFields}

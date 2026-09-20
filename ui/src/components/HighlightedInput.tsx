@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { IconSearch } from "@tabler/icons-react";
+import { IconSearch, IconX } from "@tabler/icons-react";
+import { loadHistory, pushHistory } from "../lib/history";
 import { plainTextField } from "../lib/inputProps";
 
 export interface HlToken {
@@ -32,6 +33,7 @@ export function HighlightedInput({
   invalid,
   placeholder,
   ariaLabel,
+  historyKey,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -40,6 +42,9 @@ export function HighlightedInput({
   invalid?: boolean;
   placeholder?: string;
   ariaLabel: string;
+  /** Persist applied queries under this key and offer them back when the
+   * input is focused empty. Omit for inputs with nothing worth recalling. */
+  historyKey?: string;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const preRef = useRef<HTMLPreElement>(null);
@@ -47,11 +52,32 @@ export function HighlightedInput({
   const [cursor, setCursor] = useState(0);
   const [selected, setSelected] = useState(0);
 
-  const tokens = useMemo(() => renderTokens(value), [renderTokens, value]);
-  const { from, items } = useMemo(
-    () => (open ? suggest(value, cursor) : { from: 0, items: [] }),
-    [open, suggest, value, cursor],
+  const [history, setHistory] = useState<string[]>(() =>
+    historyKey ? loadHistory(historyKey) : [],
   );
+
+  // A query counts as applied when the user commits it — Enter outside the
+  // dropdown, or leaving the field with text in it. Filters here apply live
+  // while typing, so there is no submit event to hook instead.
+  const recordApplied = () => {
+    if (historyKey && value.trim()) {
+      setHistory(pushHistory(historyKey, value));
+    }
+  };
+
+  const tokens = useMemo(() => renderTokens(value), [renderTokens, value]);
+  const { from, items } = useMemo(() => {
+    if (!open) return { from: 0, items: [] };
+    // An empty focused input offers the recent queries; anything typed
+    // switches to the grammar's own completions.
+    if (value.trim() === "" && history.length > 0) {
+      return {
+        from: 0,
+        items: history.map((q) => ({ label: q, detail: "recent", insert: q })),
+      };
+    }
+    return suggest(value, cursor);
+  }, [open, suggest, value, cursor, history]);
 
   useEffect(() => setSelected(0), [items.length, from]);
 
@@ -96,7 +122,14 @@ export function HighlightedInput({
         return;
       }
     }
+    if (e.key === "Enter") recordApplied();
     if (e.key === "Escape") (e.target as HTMLInputElement).blur();
+  };
+
+  const clear = () => {
+    onChange("");
+    setOpen(false);
+    inputRef.current?.focus();
   };
 
   const updateCursor = (el: HTMLInputElement) => {
@@ -146,9 +179,28 @@ export function HighlightedInput({
               updateCursor(e.currentTarget);
               setOpen(true);
             }}
-            onBlur={() => setTimeout(() => setOpen(false), 150)}
+            onBlur={() => {
+              recordApplied();
+              setTimeout(() => setOpen(false), 150);
+            }}
           />
         </div>
+        {value !== "" && (
+          <button
+            type="button"
+            aria-label="Clear query"
+            title="Clear"
+            onMouseDown={(e) => {
+              // mousedown, not click: the input's blur handler closes the
+              // dropdown on a 150ms timer and a click would land after it.
+              e.preventDefault();
+              clear();
+            }}
+            className="shrink-0 rounded p-0.5 text-default-400 transition-colors hover:text-foreground"
+          >
+            <IconX size={14} />
+          </button>
+        )}
       </div>
 
       {open && items.length > 0 && (

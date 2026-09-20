@@ -13,11 +13,13 @@ export function AttrInput({
   onChange,
   fields,
   placeholder,
+  historyKey,
 }: {
   value: string;
   onChange: (v: string) => void;
   fields: FieldInfo[];
   placeholder?: string;
+  historyKey?: string;
 }) {
   const renderTokens = useCallback((v: string): HlToken[] => {
     const eq = v.indexOf("=");
@@ -75,6 +77,7 @@ export function AttrInput({
       suggest={suggest}
       placeholder={placeholder}
       ariaLabel="Attribute filter"
+      historyKey={historyKey}
     />
   );
 }
