@@ -56,6 +56,13 @@ An alternative to Datadog, Kibana, CloudWatch and SigNoz you can run anywhere: o
 curl -fsSL https://raw.githubusercontent.com/tsirysndr/otelview/main/install.sh | bash
 ```
 
+**Homebrew** (macOS):
+
+```sh
+brew install tsirysndr/tap/otelview          # CLI/server
+brew install --cask tsirysndr/tap/otelview   # desktop app
+```
+
 **Docker**:
 
 ```sh
