@@ -761,6 +761,62 @@ mod tests {
         assert_eq!(total_info, 1);
     }
 
+    /// Every bucket in the window must be counted, not just the newest page.
+    ///
+    /// The histogram used to read one capped query of the newest logs while
+    /// bucketing across the whole window, so a busy interval rendered as bars
+    /// over its tail and zeros everywhere older. 6_000 logs is past the old
+    /// 5_000 cap, so on that code the oldest buckets come back empty and the
+    /// total is short.
+    #[tokio::test]
+    async fn log_histogram_counts_the_whole_window_not_just_the_newest_page() {
+        let (cfg, storage) = test_state();
+
+        // One log per millisecond from 1_000ms to 6_999ms.
+        const COUNT: u64 = 6_000;
+        const BASE_NANOS: u64 = 1_000_000_000;
+        const STEP_NANOS: u64 = 1_000_000;
+
+        let logs: Vec<_> = (0..COUNT)
+            .map(|i| otelview_model::LogRecord {
+                time_unix_nano: BASE_NANOS + i * STEP_NANOS,
+                observed_time_unix_nano: BASE_NANOS + i * STEP_NANOS,
+                severity_number: 9,
+                severity_text: String::new(),
+                body: serde_json::json!("x"),
+                attributes: serde_json::json!({}),
+                resource_attributes: serde_json::json!({}),
+                service_name: "svc".into(),
+                trace_id: String::new(),
+                span_id: String::new(),
+                scope_name: String::new(),
+            })
+            .collect();
+        storage.insert_logs(logs).await.unwrap();
+
+        let app = router(&cfg, storage);
+        let (status, v) =
+            get_json(app, "/api/logs/histogram?buckets=10&start_ms=1000&end_ms=7000").await;
+        assert_eq!(status, StatusCode::OK);
+
+        let buckets = v.as_array().unwrap();
+        assert_eq!(buckets.len(), 10);
+
+        let total: u64 = buckets.iter().map(|b| b["info"].as_u64().unwrap()).sum();
+        assert_eq!(total, COUNT, "every log in the window should be counted");
+
+        // The symptom this guards: the far end of the window reading as empty
+        // because only the newest logs were ever fetched.
+        assert_eq!(
+            buckets[0]["info"].as_u64().unwrap(),
+            600,
+            "the oldest bucket should be as full as the newest"
+        );
+        for (i, b) in buckets.iter().enumerate() {
+            assert_eq!(b["info"].as_u64().unwrap(), 600, "bucket {i} is uneven");
+        }
+    }
+
     #[tokio::test]
     async fn kql_filters_logs() {
         let (cfg, storage) = test_state();

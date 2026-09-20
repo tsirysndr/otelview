@@ -7,7 +7,7 @@
 
 use std::collections::BTreeMap;
 
-use otelview_model::{LogQuery, LogRecord, SpanRecord, TraceQuery};
+use otelview_model::{LogQuery, SpanRecord, TraceQuery};
 use otelview_storage::DynStorage;
 use serde::Serialize;
 
@@ -301,26 +301,89 @@ pub async fn service_graph(
     })
 }
 
+/// Logs pulled per page while walking the interval.
+const HISTOGRAM_PAGE: usize = 10_000;
+
+/// Ceiling on rows scanned for one histogram, so an interval holding millions
+/// of logs cannot pin the process. Only a timestamp and a severity are kept
+/// per row, so the working set here is a few tens of MB at the limit rather
+/// than that many whole records.
+const HISTOGRAM_MAX_SCANNED: usize = 1_000_000;
+
 /// Bucket matching logs over time, split by coarse severity level.
+///
+/// The interval is walked newest-first in pages rather than read in one capped
+/// query. A single capped query counted only the newest N logs while the
+/// buckets still spanned the whole window, so anything busier than that cap
+/// rendered as bars over the most recent slice and zeros across the rest — a
+/// chart that reported a quiet hour with a late spike no matter what the hour
+/// actually held.
 pub async fn log_histogram(
     storage: &DynStorage,
-    mut q: LogQuery,
+    q: LogQuery,
     buckets: usize,
     time_min: Option<u64>,
     time_max: Option<u64>,
     kql: Option<&crate::kql::Expr>,
 ) -> anyhow::Result<Vec<LogBucket>> {
-    q.limit = 5_000;
-    let mut logs = storage.query_logs(q).await?;
-    if let Some(expr) = kql {
-        logs.retain(|l| crate::kql::eval(expr, l));
+    // Only what bucketing needs, so the cap can be generous.
+    let mut samples: Vec<(u64, i32)> = Vec::new();
+    let mut cursor = time_max;
+    let mut scanned = 0usize;
+
+    loop {
+        let mut page_q = q.clone();
+        page_q.limit = HISTOGRAM_PAGE;
+        page_q.time_max_unix_nano = cursor;
+
+        let page = storage.query_logs(page_q).await?;
+        let page_len = page.len();
+        scanned += page_len;
+
+        let mut oldest: Option<u64> = None;
+        for l in &page {
+            oldest = Some(oldest.map_or(l.time_unix_nano, |o: u64| o.min(l.time_unix_nano)));
+        }
+        for l in page {
+            if kql.is_none_or(|expr| crate::kql::eval(expr, &l)) {
+                samples.push((l.time_unix_nano, l.severity_number));
+            }
+        }
+
+        // A short page means the interval is exhausted.
+        if page_len < HISTOGRAM_PAGE {
+            break;
+        }
+        if scanned >= HISTOGRAM_MAX_SCANNED {
+            tracing::warn!(
+                scanned,
+                limit = HISTOGRAM_MAX_SCANNED,
+                "log histogram hit its scan ceiling; older buckets in this window are incomplete"
+            );
+            break;
+        }
+        let Some(oldest) = oldest else { break };
+
+        // Step strictly past the oldest row of this page. Backends differ on
+        // whether the bound is inclusive (DuckDB) or exclusive (the remote
+        // storage API), and stepping a nanosecond past it terminates on both.
+        // Rows sharing that exact nanosecond across a page boundary are the
+        // one thing this can miss, which needs 10_000 logs to land on the same
+        // nanosecond to happen at all.
+        let next = oldest.saturating_sub(1);
+        if time_min.is_some_and(|t_min| next < t_min) || cursor == Some(next) || next == 0 {
+            break;
+        }
+        cursor = Some(next);
     }
-    if logs.is_empty() {
+
+    if samples.is_empty() {
         return Ok(Vec::new());
     }
-    let t_min = time_min.unwrap_or_else(|| logs.iter().map(|l| l.time_unix_nano).min().unwrap());
+
+    let t_min = time_min.unwrap_or_else(|| samples.iter().map(|(t, _)| *t).min().unwrap());
     let t_max = time_max
-        .unwrap_or_else(|| logs.iter().map(|l| l.time_unix_nano).max().unwrap())
+        .unwrap_or_else(|| samples.iter().map(|(t, _)| *t).max().unwrap())
         .max(t_min + 1);
     let buckets = buckets.clamp(5, 200) as u64;
     let width = ((t_max - t_min) / buckets).max(1);
@@ -336,15 +399,15 @@ pub async fn log_histogram(
             fatal: 0,
         })
         .collect();
-    for l in &logs {
-        let idx = (l.time_unix_nano.saturating_sub(t_min) / width).min(buckets - 1) as usize;
-        bump(&mut out[idx], l);
+    for (time, severity) in &samples {
+        let idx = (time.saturating_sub(t_min) / width).min(buckets - 1) as usize;
+        bump(&mut out[idx], *severity);
     }
     Ok(out)
 }
 
-fn bump(b: &mut LogBucket, l: &LogRecord) {
-    match l.severity_number {
+fn bump(b: &mut LogBucket, severity_number: i32) {
+    match severity_number {
         1..=4 => b.trace += 1,
         5..=8 => b.debug += 1,
         13..=16 => b.warn += 1,
