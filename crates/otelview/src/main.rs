@@ -95,6 +95,25 @@ async fn main() -> Result<()> {
         .await
         .context("initializing storage backend")?;
 
+    // Retention runs beside the servers, not in their request path. The
+    // durations were validated with the rest of the config, so these parses
+    // cannot fail here.
+    if let Some(raw) = cfg
+        .storage
+        .retention
+        .as_deref()
+        .filter(|r| !r.trim().is_empty())
+    {
+        let retention = otelview_config::parse_duration(raw).context("storage.retention")?;
+        let every = otelview_config::parse_duration(&cfg.storage.retention_sweep_interval)
+            .context("storage.retention_sweep_interval")?;
+        tokio::spawn(otelview_storage::run_retention(
+            storage.clone(),
+            retention,
+            every,
+        ));
+    }
+
     let mut tasks: Vec<tokio::task::JoinHandle<Result<()>>> = Vec::new();
     if cfg.receivers.grpc.enabled {
         let cfg = cfg.clone();

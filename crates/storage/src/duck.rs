@@ -596,6 +596,24 @@ impl Storage for DuckdbStorage {
         })
         .await
     }
+
+    async fn sweep_expired(&self, cutoff_unix_nano: u64) -> Result<Option<(u64, u64, u64)>> {
+        self.with_write(move |conn| {
+            let cutoff = cutoff_unix_nano.min(i64::MAX as u64) as i64;
+            // One statement per table: embedded deletes are cheap and hold no
+            // lock anyone else contends on — the batching the postgres
+            // storage does exists for its remote locks, not for correctness.
+            let spans =
+                conn.execute("DELETE FROM spans WHERE start_time_unix_nano < ?", [cutoff])? as u64;
+            let logs = conn.execute("DELETE FROM logs WHERE time_unix_nano < ?", [cutoff])? as u64;
+            let metric_points = conn.execute(
+                "DELETE FROM metric_points WHERE time_unix_nano < ?",
+                [cutoff],
+            )? as u64;
+            Ok(Some((spans, logs, metric_points)))
+        })
+        .await
+    }
 }
 
 /// The memory limits config is unused here but kept for signature parity.
@@ -690,6 +708,79 @@ mod tests {
                 .unwrap()
                 .unwrap();
             assert_eq!(services, vec!["svc-seed"]);
+        }
+    }
+
+    /// The sweep deletes strictly-older rows from all three tables and
+    /// leaves the rest, reporting what it removed.
+    #[tokio::test]
+    async fn sweep_deletes_only_expired_rows() {
+        let store = DuckdbStorage::open(":memory:").unwrap();
+        store
+            .insert_spans(vec![
+                span("t-old", "a", "svc", 1_000, 0),
+                span("t-new", "b", "svc", 5_000, 0),
+            ])
+            .await
+            .unwrap();
+        store
+            .insert_logs(vec![log_at(1_000, "old"), log_at(5_000, "new")])
+            .await
+            .unwrap();
+        store
+            .insert_metrics(vec![metric_at(1_000), metric_at(5_000)])
+            .await
+            .unwrap();
+
+        let deleted = store.sweep_expired(2_000).await.unwrap();
+        assert_eq!(deleted, Some((1, 1, 1)));
+
+        let traces = store
+            .find_traces(TraceQuery {
+                limit: 10,
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(traces.len(), 1);
+        assert_eq!(traces[0].trace_id, "t-new");
+
+        let logs = store.query_logs(LogQuery::default()).await.unwrap();
+        assert_eq!(logs.len(), 1);
+
+        // A second sweep at the same cutoff finds nothing.
+        assert_eq!(store.sweep_expired(2_000).await.unwrap(), Some((0, 0, 0)));
+    }
+
+    fn log_at(t: u64, body: &str) -> LogRecord {
+        LogRecord {
+            time_unix_nano: t,
+            observed_time_unix_nano: t,
+            severity_number: 9,
+            severity_text: "INFO".into(),
+            body: serde_json::json!(body),
+            attributes: serde_json::json!({}),
+            resource_attributes: serde_json::json!({}),
+            service_name: "svc".into(),
+            trace_id: String::new(),
+            span_id: String::new(),
+            scope_name: String::new(),
+        }
+    }
+
+    fn metric_at(t: u64) -> MetricPoint {
+        MetricPoint {
+            name: "m".into(),
+            description: String::new(),
+            unit: String::new(),
+            metric_type: MetricType::Gauge,
+            service_name: "svc".into(),
+            time_unix_nano: t,
+            value: 1.0,
+            count: 0,
+            attributes: serde_json::json!({}),
+            resource_attributes: serde_json::json!({}),
+            extra: serde_json::json!({}),
         }
     }
 
