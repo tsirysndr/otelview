@@ -28,8 +28,14 @@ pub struct Receivers {
 impl Default for Receivers {
     fn default() -> Self {
         Self {
-            grpc: Endpoint { enabled: true, listen: "0.0.0.0:4317".into() },
-            http: Endpoint { enabled: true, listen: "0.0.0.0:4318".into() },
+            grpc: Endpoint {
+                enabled: true,
+                listen: "0.0.0.0:4317".into(),
+            },
+            http: Endpoint {
+                enabled: true,
+                listen: "0.0.0.0:4318".into(),
+            },
         }
     }
 }
@@ -43,7 +49,10 @@ pub struct Endpoint {
 
 impl Default for Endpoint {
     fn default() -> Self {
-        Self { enabled: true, listen: String::new() }
+        Self {
+            enabled: true,
+            listen: String::new(),
+        }
     }
 }
 
@@ -62,13 +71,20 @@ pub struct Auth {
 
 impl Default for Auth {
     fn default() -> Self {
-        Self { header: "x-otelview-token".into(), token: None, protect_api: false }
+        Self {
+            header: "x-otelview-token".into(),
+            token: None,
+            protect_api: false,
+        }
     }
 }
 
 impl Auth {
     pub fn enabled(&self) -> bool {
-        self.token.as_deref().map(|t| !t.is_empty()).unwrap_or(false)
+        self.token
+            .as_deref()
+            .map(|t| !t.is_empty())
+            .unwrap_or(false)
     }
 }
 
@@ -113,7 +129,11 @@ pub struct MemoryConfig {
 
 impl Default for MemoryConfig {
     fn default() -> Self {
-        Self { max_spans: 200_000, max_logs: 200_000, max_metric_points: 500_000 }
+        Self {
+            max_spans: 200_000,
+            max_logs: 200_000,
+            max_metric_points: 500_000,
+        }
     }
 }
 
@@ -126,7 +146,9 @@ pub struct DuckdbConfig {
 
 impl Default for DuckdbConfig {
     fn default() -> Self {
-        Self { path: "otelview.duckdb".into() }
+        Self {
+            path: "otelview.duckdb".into(),
+        }
     }
 }
 
@@ -145,7 +167,10 @@ pub struct JaegerConfig {
 
 impl Default for JaegerConfig {
     fn default() -> Self {
-        Self { endpoint: String::new(), fallback: FallbackBackend::Memory }
+        Self {
+            endpoint: String::new(),
+            fallback: FallbackBackend::Memory,
+        }
     }
 }
 
@@ -192,13 +217,20 @@ pub struct UiConfig {
 
 impl Default for UiConfig {
     fn default() -> Self {
-        Self { listen: "127.0.0.1:4319".into(), cors: true, token: None }
+        Self {
+            listen: "127.0.0.1:4319".into(),
+            cors: true,
+            token: None,
+        }
     }
 }
 
 impl UiConfig {
     pub fn auth_enabled(&self) -> bool {
-        self.token.as_deref().map(|t| !t.is_empty()).unwrap_or(false)
+        self.token
+            .as_deref()
+            .map(|t| !t.is_empty())
+            .unwrap_or(false)
     }
 }
 

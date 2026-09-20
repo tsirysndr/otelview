@@ -113,9 +113,9 @@ async fn main() -> Result<()> {
     {
         let cfg = cfg.clone();
         let storage = storage.clone();
-        tasks.push(tokio::spawn(
-            async move { otelview_api::serve(&cfg, storage).await },
-        ));
+        tasks.push(tokio::spawn(async move {
+            otelview_api::serve(&cfg, storage).await
+        }));
     }
 
     // First task to exit (usually with a bind error) brings the process down.

@@ -119,8 +119,12 @@ impl Storage for MemoryStorage {
 
     async fn get_trace(&self, trace_id: &str) -> Result<Vec<SpanRecord>> {
         let inner = self.inner.read().unwrap();
-        let mut spans: Vec<SpanRecord> =
-            inner.spans.iter().filter(|s| s.trace_id == trace_id).cloned().collect();
+        let mut spans: Vec<SpanRecord> = inner
+            .spans
+            .iter()
+            .filter(|s| s.trace_id == trace_id)
+            .cloned()
+            .collect();
         spans.sort_by_key(|s| s.start_time_unix_nano);
         Ok(spans)
     }
@@ -144,13 +148,15 @@ impl Storage for MemoryStorage {
         let inner = self.inner.read().unwrap();
         let mut by_name: BTreeMap<&str, MetricInfo> = BTreeMap::new();
         for m in &inner.metrics {
-            let entry = by_name.entry(m.name.as_str()).or_insert_with(|| MetricInfo {
-                name: m.name.clone(),
-                description: m.description.clone(),
-                unit: m.unit.clone(),
-                metric_type: m.metric_type,
-                services: Vec::new(),
-            });
+            let entry = by_name
+                .entry(m.name.as_str())
+                .or_insert_with(|| MetricInfo {
+                    name: m.name.clone(),
+                    description: m.description.clone(),
+                    unit: m.unit.clone(),
+                    metric_type: m.metric_type,
+                    services: Vec::new(),
+                });
             if !entry.services.contains(&m.service_name) {
                 entry.services.push(m.service_name.clone());
             }
@@ -164,9 +170,22 @@ impl Storage for MemoryStorage {
             .metrics
             .iter()
             .filter(|m| m.name == q.name)
-            .filter(|m| q.service.as_deref().map(|s| s.is_empty() || m.service_name == s).unwrap_or(true))
-            .filter(|m| q.time_min_unix_nano.map(|t| m.time_unix_nano >= t).unwrap_or(true))
-            .filter(|m| q.time_max_unix_nano.map(|t| m.time_unix_nano <= t).unwrap_or(true))
+            .filter(|m| {
+                q.service
+                    .as_deref()
+                    .map(|s| s.is_empty() || m.service_name == s)
+                    .unwrap_or(true)
+            })
+            .filter(|m| {
+                q.time_min_unix_nano
+                    .map(|t| m.time_unix_nano >= t)
+                    .unwrap_or(true)
+            })
+            .filter(|m| {
+                q.time_max_unix_nano
+                    .map(|t| m.time_unix_nano <= t)
+                    .unwrap_or(true)
+            })
             .collect();
         Ok(group_series(points, q.max_points))
     }
@@ -241,7 +260,10 @@ pub(crate) fn group_series(points: Vec<&MetricPoint>, max_points: usize) -> Vec<
             attributes: p.attributes.clone(),
             points: Vec::new(),
         });
-        series.points.push(SeriesPoint { time_unix_nano: p.time_unix_nano, value: p.value });
+        series.points.push(SeriesPoint {
+            time_unix_nano: p.time_unix_nano,
+            value: p.value,
+        });
     }
     let max_points = if max_points == 0 { 500 } else { max_points };
     let mut out: Vec<MetricSeries> = by_key.into_values().collect();
@@ -249,12 +271,7 @@ pub(crate) fn group_series(points: Vec<&MetricPoint>, max_points: usize) -> Vec<
         series.points.sort_by_key(|p| p.time_unix_nano);
         if series.points.len() > max_points {
             let stride = series.points.len().div_ceil(max_points);
-            series.points = series
-                .points
-                .iter()
-                .step_by(stride)
-                .cloned()
-                .collect();
+            series.points = series.points.iter().step_by(stride).cloned().collect();
         }
     }
     out
@@ -289,8 +306,14 @@ mod tests {
 
     #[tokio::test]
     async fn ring_buffer_caps_spans() {
-        let store = MemoryStorage::new(&MemoryConfig { max_spans: 3, max_logs: 3, max_metric_points: 3 });
-        let spans = (0..5).map(|i| span(&format!("t{i}"), "s", "svc", i)).collect();
+        let store = MemoryStorage::new(&MemoryConfig {
+            max_spans: 3,
+            max_logs: 3,
+            max_metric_points: 3,
+        });
+        let spans = (0..5)
+            .map(|i| span(&format!("t{i}"), "s", "svc", i))
+            .collect();
         store.insert_spans(spans).await.unwrap();
         assert_eq!(store.stats().await.unwrap().spans, 3);
         // Oldest evicted: t0/t1 gone.
@@ -307,7 +330,11 @@ mod tests {
             spans.push(span(&format!("t{i}"), "s", svc, i * 10));
         }
         store.insert_spans(spans).await.unwrap();
-        let q = TraceQuery { service: Some("even".into()), limit: 3, ..Default::default() };
+        let q = TraceQuery {
+            service: Some("even".into()),
+            limit: 3,
+            ..Default::default()
+        };
         let res = store.find_traces(q).await.unwrap();
         assert_eq!(res.len(), 3);
         assert!(res.iter().all(|t| t.root_service == "even"));
@@ -347,11 +374,17 @@ mod tests {
             },
         ];
         store.insert_logs(logs).await.unwrap();
-        let q = LogQuery { min_severity: Some(13), ..Default::default() };
+        let q = LogQuery {
+            min_severity: Some(13),
+            ..Default::default()
+        };
         let res = store.query_logs(q).await.unwrap();
         assert_eq!(res.len(), 1);
         assert_eq!(res[0].severity_text, "ERROR");
-        let q = LogQuery { search: Some("HELLO".into()), ..Default::default() };
+        let q = LogQuery {
+            search: Some("HELLO".into()),
+            ..Default::default()
+        };
         assert_eq!(store.query_logs(q).await.unwrap().len(), 1);
     }
 
@@ -377,7 +410,10 @@ mod tests {
             }
         }
         store.insert_metrics(points).await.unwrap();
-        let q = MetricQuery { name: "http.requests".into(), ..Default::default() };
+        let q = MetricQuery {
+            name: "http.requests".into(),
+            ..Default::default()
+        };
         let series = store.query_metric_series(q).await.unwrap();
         assert_eq!(series.len(), 2);
         assert!(series.iter().all(|s| s.points.len() == 4));

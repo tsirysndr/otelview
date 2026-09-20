@@ -32,15 +32,22 @@ use crate::{otlp, DynStorage, Storage};
 /// Adds the configured auth header to every outgoing request.
 #[derive(Clone)]
 pub struct AuthInterceptor {
-    header: Option<(MetadataKey<tonic::metadata::Ascii>, MetadataValue<tonic::metadata::Ascii>)>,
+    header: Option<(
+        MetadataKey<tonic::metadata::Ascii>,
+        MetadataValue<tonic::metadata::Ascii>,
+    )>,
 }
 
 impl AuthInterceptor {
     pub fn new(header: &str, token: Option<&str>) -> Result<Self> {
         let header = match token.filter(|t| !t.is_empty()) {
             Some(token) => Some((
-                header.parse::<MetadataKey<_>>().context("invalid auth header name")?,
-                token.parse::<MetadataValue<_>>().context("invalid auth token value")?,
+                header
+                    .parse::<MetadataKey<_>>()
+                    .context("invalid auth header name")?,
+                token
+                    .parse::<MetadataValue<_>>()
+                    .context("invalid auth token value")?,
             )),
             None => None,
         };
@@ -87,7 +94,11 @@ impl RemoteStorage {
         // The trace half never uses its fallback; a tiny memory store satisfies
         // the constructor.
         let fallback: DynStorage = std::sync::Arc::new(crate::memory::MemoryStorage::new(
-            &otelview_config::MemoryConfig { max_spans: 1, max_logs: 1, max_metric_points: 1 },
+            &otelview_config::MemoryConfig {
+                max_spans: 1,
+                max_logs: 1,
+                max_metric_points: 1,
+            },
         ));
         let traces = JaegerStorage::from_channel(
             channel.clone(),
@@ -95,30 +106,32 @@ impl RemoteStorage {
             cfg.endpoint.clone(),
             interceptor.clone(),
         );
-        Ok(Self { channel, interceptor, traces, endpoint: cfg.endpoint.clone() })
+        Ok(Self {
+            channel,
+            interceptor,
+            traces,
+            endpoint: cfg.endpoint.clone(),
+        })
     }
 
     fn log_reader(
         &self,
-    ) -> LogReaderClient<
-        tonic::service::interceptor::InterceptedService<Channel, AuthInterceptor>,
-    > {
+    ) -> LogReaderClient<tonic::service::interceptor::InterceptedService<Channel, AuthInterceptor>>
+    {
         LogReaderClient::with_interceptor(self.channel.clone(), self.interceptor.clone())
     }
 
     fn metric_reader(
         &self,
-    ) -> MetricReaderClient<
-        tonic::service::interceptor::InterceptedService<Channel, AuthInterceptor>,
-    > {
+    ) -> MetricReaderClient<tonic::service::interceptor::InterceptedService<Channel, AuthInterceptor>>
+    {
         MetricReaderClient::with_interceptor(self.channel.clone(), self.interceptor.clone())
     }
 
     fn diagnostics(
         &self,
-    ) -> DiagnosticsClient<
-        tonic::service::interceptor::InterceptedService<Channel, AuthInterceptor>,
-    > {
+    ) -> DiagnosticsClient<tonic::service::interceptor::InterceptedService<Channel, AuthInterceptor>>
+    {
         DiagnosticsClient::with_interceptor(self.channel.clone(), self.interceptor.clone())
     }
 }
@@ -135,7 +148,9 @@ impl Storage for RemoteStorage {
         }
         let data = otlp::logs_to_logs_data(&logs);
         LogsServiceClient::with_interceptor(self.channel.clone(), self.interceptor.clone())
-            .export(ExportLogsServiceRequest { resource_logs: data.resource_logs })
+            .export(ExportLogsServiceRequest {
+                resource_logs: data.resource_logs,
+            })
             .await
             .with_context(|| format!("exporting logs to remote storage at {}", self.endpoint))?;
         Ok(())
@@ -147,7 +162,9 @@ impl Storage for RemoteStorage {
         }
         let data = otlp::metric_points_to_metrics_data(&points);
         MetricsServiceClient::with_interceptor(self.channel.clone(), self.interceptor.clone())
-            .export(ExportMetricsServiceRequest { resource_metrics: data.resource_metrics })
+            .export(ExportMetricsServiceRequest {
+                resource_metrics: data.resource_metrics,
+            })
             .await
             .with_context(|| format!("exporting metrics to remote storage at {}", self.endpoint))?;
         Ok(())
@@ -160,10 +177,18 @@ impl Storage for RemoteStorage {
         if let Ok(s) = self.traces.list_services().await {
             services.extend(s);
         }
-        if let Ok(resp) = self.log_reader().get_services(osv1::GetServicesRequest {}).await {
+        if let Ok(resp) = self
+            .log_reader()
+            .get_services(osv1::GetServicesRequest {})
+            .await
+        {
             services.extend(resp.into_inner().services);
         }
-        if let Ok(resp) = self.metric_reader().get_services(osv1::GetServicesRequest {}).await {
+        if let Ok(resp) = self
+            .metric_reader()
+            .get_services(osv1::GetServicesRequest {})
+            .await
+        {
             services.extend(resp.into_inner().services);
         }
         Ok(services.into_iter().collect())

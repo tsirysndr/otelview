@@ -43,8 +43,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 fn link_static_duckdb() {
     println!("cargo:rerun-if-env-changed=DUCKDB_LIB_DIR");
     println!("cargo:rerun-if-env-changed=DUCKDB_STATIC");
-    let is_static = std::env::var("DUCKDB_STATIC").map(|v| v != "0").unwrap_or(false);
-    let Ok(dir) = std::env::var("DUCKDB_LIB_DIR") else { return };
+    let is_static = std::env::var("DUCKDB_STATIC")
+        .map(|v| v != "0")
+        .unwrap_or(false);
+    let Ok(dir) = std::env::var("DUCKDB_LIB_DIR") else {
+        return;
+    };
     if !is_static {
         return;
     }

@@ -24,7 +24,11 @@ pub fn apply_function(series: &mut [MetricSeries], func: &str) {
             let dv = w[1].value - w[0].value;
             let dv = if dv < 0.0 {
                 // Counter reset: assume it restarted from zero.
-                if func == "rate" { w[1].value } else { 0.0 }
+                if func == "rate" {
+                    w[1].value
+                } else {
+                    0.0
+                }
             } else {
                 dv
             };
@@ -85,7 +89,10 @@ pub fn aggregate(series: Vec<MetricSeries>, agg: &str, buckets: usize) -> Vec<Me
                 "min" => values.iter().cloned().fold(f64::INFINITY, f64::min),
                 _ => values.iter().cloned().fold(f64::NEG_INFINITY, f64::max),
             };
-            SeriesPoint { time_unix_nano: t_min + i as u64 * width + width / 2, value }
+            SeriesPoint {
+                time_unix_nano: t_min + i as u64 * width + width / 2,
+                value,
+            }
         })
         .collect();
 
@@ -106,7 +113,10 @@ mod tests {
             attributes: json!({}),
             points: points
                 .iter()
-                .map(|(t, v)| SeriesPoint { time_unix_nano: *t, value: *v })
+                .map(|(t, v)| SeriesPoint {
+                    time_unix_nano: *t,
+                    value: *v,
+                })
                 .collect(),
         }
     }
@@ -115,9 +125,9 @@ mod tests {
     fn rate_is_per_second_and_handles_resets() {
         let mut s = vec![series(&[
             (0, 100.0),
-            (1_000_000_000, 160.0),  // +60 over 1s → 60/s
-            (2_000_000_000, 10.0),   // reset → 10/s
-            (4_000_000_000, 30.0),   // +20 over 2s → 10/s
+            (1_000_000_000, 160.0), // +60 over 1s → 60/s
+            (2_000_000_000, 10.0),  // reset → 10/s
+            (4_000_000_000, 30.0),  // +20 over 2s → 10/s
         ])];
         apply_function(&mut s, "rate");
         let v: Vec<f64> = s[0].points.iter().map(|p| p.value).collect();
@@ -126,7 +136,11 @@ mod tests {
 
     #[test]
     fn increase_clamps_resets_to_zero() {
-        let mut s = vec![series(&[(0, 100.0), (1_000_000_000, 160.0), (2_000_000_000, 10.0)])];
+        let mut s = vec![series(&[
+            (0, 100.0),
+            (1_000_000_000, 160.0),
+            (2_000_000_000, 10.0),
+        ])];
         apply_function(&mut s, "increase");
         let v: Vec<f64> = s[0].points.iter().map(|p| p.value).collect();
         assert_eq!(v, vec![60.0, 0.0]);

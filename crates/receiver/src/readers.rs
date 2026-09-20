@@ -29,7 +29,12 @@ fn duration_to_nanos(d: Option<&prost_types::Duration>) -> Option<u64> {
 }
 
 fn trace_query_from_params(p: Option<&jsv2::TraceQueryParameters>) -> TraceQuery {
-    let Some(p) = p else { return TraceQuery { limit: 20, ..Default::default() } };
+    let Some(p) = p else {
+        return TraceQuery {
+            limit: 20,
+            ..Default::default()
+        };
+    };
     let attribute_query = p.attributes.first().map(|kv| {
         let value = kv
             .value
@@ -51,7 +56,11 @@ fn trace_query_from_params(p: Option<&jsv2::TraceQueryParameters>) -> TraceQuery
         start_time_min_unix_nano: timestamp_to_nanos(p.start_time_min.as_ref()),
         start_time_max_unix_nano: timestamp_to_nanos(p.start_time_max.as_ref()),
         errors_only: false,
-        limit: if p.search_depth <= 0 { 20 } else { p.search_depth as usize },
+        limit: if p.search_depth <= 0 {
+            20
+        } else {
+            p.search_depth as usize
+        },
     }
 }
 
@@ -124,11 +133,18 @@ impl jsv2::trace_reader_server::TraceReader for TraceReaderService {
         request: Request<jsv2::GetOperationsRequest>,
     ) -> Result<Response<jsv2::GetOperationsResponse>, Status> {
         let service = request.into_inner().service;
-        let ops = self.storage.list_operations(&service).await.map_err(internal)?;
+        let ops = self
+            .storage
+            .list_operations(&service)
+            .await
+            .map_err(internal)?;
         Ok(Response::new(jsv2::GetOperationsResponse {
             operations: ops
                 .into_iter()
-                .map(|name| jsv2::Operation { name, span_kind: String::new() })
+                .map(|name| jsv2::Operation {
+                    name,
+                    span_kind: String::new(),
+                })
                 .collect(),
         }))
     }
@@ -239,7 +255,11 @@ impl osv1::log_reader_server::LogReader for LogReaderService {
             trace_id: Some(p.trace_id).filter(|s| !s.is_empty()),
             time_min_unix_nano: timestamp_to_nanos(p.time_min.as_ref()),
             time_max_unix_nano: timestamp_to_nanos(p.time_max.as_ref()),
-            limit: if p.search_depth <= 0 { 200 } else { p.search_depth as usize },
+            limit: if p.search_depth <= 0 {
+                200
+            } else {
+                p.search_depth as usize
+            },
         };
         let logs = self.storage.query_logs(q).await.map_err(internal)?;
         let chunks = if logs.is_empty() {
@@ -302,22 +322,31 @@ impl osv1::metric_reader_server::MetricReader for MetricReaderService {
             service: Some(p.service_name).filter(|s| !s.is_empty()),
             time_min_unix_nano: timestamp_to_nanos(p.time_min.as_ref()),
             time_max_unix_nano: timestamp_to_nanos(p.time_max.as_ref()),
-            max_points: if p.max_points <= 0 { 500 } else { p.max_points as usize },
+            max_points: if p.max_points <= 0 {
+                500
+            } else {
+                p.max_points as usize
+            },
         };
         // Serve raw points reconstructed from the stored series so the
         // client can re-group them however it wants.
-        let series = self.storage.query_metric_series(q.clone()).await.map_err(internal)?;
+        let series = self
+            .storage
+            .query_metric_series(q.clone())
+            .await
+            .map_err(internal)?;
         let infos = self.storage.list_metrics().await.map_err(internal)?;
         let info = infos.into_iter().find(|m| m.name == q.name);
         let name = q.name.clone();
-        let points: Vec<otelview_model::MetricPoint> = series
-            .into_iter()
-            .flat_map(|s| {
-                let attrs = s.attributes.clone();
-                let service = s.service_name.clone();
-                let info = info.clone();
-                let name = name.clone();
-                s.points.into_iter().map(move |pt| otelview_model::MetricPoint {
+        let points: Vec<otelview_model::MetricPoint> =
+            series
+                .into_iter()
+                .flat_map(|s| {
+                    let attrs = s.attributes.clone();
+                    let service = s.service_name.clone();
+                    let info = info.clone();
+                    let name = name.clone();
+                    s.points.into_iter().map(move |pt| otelview_model::MetricPoint {
                     name: name.clone(),
                     description: info.as_ref().map(|i| i.description.clone()).unwrap_or_default(),
                     unit: info.as_ref().map(|i| i.unit.clone()).unwrap_or_default(),
@@ -333,8 +362,8 @@ impl osv1::metric_reader_server::MetricReader for MetricReaderService {
                     resource_attributes: serde_json::json!({"service.name": service.clone()}),
                     extra: serde_json::json!({}),
                 })
-            })
-            .collect();
+                })
+                .collect();
         let chunks = if points.is_empty() {
             Vec::new()
         } else {

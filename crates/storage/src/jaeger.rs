@@ -50,7 +50,12 @@ impl JaegerStorage {
         endpoint: String,
         interceptor: AuthInterceptor,
     ) -> Self {
-        Self { channel, interceptor, fallback, endpoint }
+        Self {
+            channel,
+            interceptor,
+            fallback,
+            endpoint,
+        }
     }
 
     fn reader(&self) -> TraceReaderClient<InterceptedService<Channel, AuthInterceptor>> {
@@ -111,7 +116,9 @@ impl Storage for JaegerStorage {
         }
         let traces_data = otlp::spans_to_traces_data(&spans);
         self.writer()
-            .export(ExportTraceServiceRequest { resource_spans: traces_data.resource_spans })
+            .export(ExportTraceServiceRequest {
+                resource_spans: traces_data.resource_spans,
+            })
             .await
             .with_context(|| format!("exporting spans to jaeger storage at {}", self.endpoint))?;
         Ok(())
@@ -143,8 +150,12 @@ impl Storage for JaegerStorage {
             })
             .await
             .context("jaeger GetOperations")?;
-        let mut ops: Vec<String> =
-            resp.into_inner().operations.into_iter().map(|o| o.name).collect();
+        let mut ops: Vec<String> = resp
+            .into_inner()
+            .operations
+            .into_iter()
+            .map(|o| o.name)
+            .collect();
         ops.sort();
         ops.dedup();
         Ok(ops)
@@ -156,7 +167,9 @@ impl Storage for JaegerStorage {
         // Preferred: lightweight summaries straight from the backend.
         let summaries = self
             .reader()
-            .find_trace_summaries(jsv2::FindTraceSummariesRequest { query: Some(params.clone()) })
+            .find_trace_summaries(jsv2::FindTraceSummariesRequest {
+                query: Some(params.clone()),
+            })
             .await;
         match summaries {
             Ok(stream) => {
@@ -185,7 +198,9 @@ impl Storage for JaegerStorage {
             Err(status) if status.code() == Code::Unimplemented => {
                 let mut stream = self
                     .reader()
-                    .find_traces(jsv2::FindTracesRequest { query: Some(params) })
+                    .find_traces(jsv2::FindTracesRequest {
+                        query: Some(params),
+                    })
                     .await
                     .context("jaeger FindTraces")?
                     .into_inner();

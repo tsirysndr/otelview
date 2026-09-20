@@ -34,7 +34,9 @@ impl ServerAuth {
 
 impl tonic::service::Interceptor for ServerAuth {
     fn call(&mut self, req: Request<()>) -> Result<Request<()>, Status> {
-        let Some(expected) = &self.token else { return Ok(req) };
+        let Some(expected) = &self.token else {
+            return Ok(req);
+        };
         match req.metadata().get(self.header.as_str()) {
             Some(value) if value.to_str().map(|v| v == expected).unwrap_or(false) => Ok(req),
             _ => Err(Status::unauthenticated(format!(
@@ -69,7 +71,9 @@ impl TraceService for TraceReceiver {
         let count = spans.len();
         self.storage.insert_spans(spans).await.map_err(internal)?;
         tracing::debug!(count, "ingested spans via gRPC");
-        Ok(Response::new(ExportTraceServiceResponse { partial_success: None }))
+        Ok(Response::new(ExportTraceServiceResponse {
+            partial_success: None,
+        }))
     }
 }
 
@@ -93,7 +97,9 @@ impl LogsService for LogsReceiver {
         let count = logs.len();
         self.storage.insert_logs(logs).await.map_err(internal)?;
         tracing::debug!(count, "ingested logs via gRPC");
-        Ok(Response::new(ExportLogsServiceResponse { partial_success: None }))
+        Ok(Response::new(ExportLogsServiceResponse {
+            partial_success: None,
+        }))
     }
 }
 
@@ -115,9 +121,14 @@ impl MetricsService for MetricsReceiver {
     ) -> Result<Response<ExportMetricsServiceResponse>, Status> {
         let points = otlp::metrics_from_resource_metrics(&request.into_inner().resource_metrics);
         let count = points.len();
-        self.storage.insert_metrics(points).await.map_err(internal)?;
+        self.storage
+            .insert_metrics(points)
+            .await
+            .map_err(internal)?;
         tracing::debug!(count, "ingested metric points via gRPC");
-        Ok(Response::new(ExportMetricsServiceResponse { partial_success: None }))
+        Ok(Response::new(ExportMetricsServiceResponse {
+            partial_success: None,
+        }))
     }
 }
 
@@ -147,7 +158,11 @@ mod tests {
         };
         let mut auth = ServerAuth::from_config(&cfg);
         assert!(auth.call(Request::new(())).is_err());
-        assert!(auth.call(req_with_header("x-otelview-token", "wrong")).is_err());
-        assert!(auth.call(req_with_header("x-otelview-token", "sekret")).is_ok());
+        assert!(auth
+            .call(req_with_header("x-otelview-token", "wrong"))
+            .is_err());
+        assert!(auth
+            .call(req_with_header("x-otelview-token", "sekret"))
+            .is_ok());
     }
 }

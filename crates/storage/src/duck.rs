@@ -129,7 +129,8 @@ impl DuckdbStorage {
         } else {
             Connection::open(path).with_context(|| format!("opening DuckDB at {path}"))?
         };
-        conn.execute_batch(SCHEMA).context("creating DuckDB schema")?;
+        conn.execute_batch(SCHEMA)
+            .context("creating DuckDB schema")?;
 
         // `try_clone` attaches another connection to the already-open
         // database — including an in-memory one, which is why the tests can
@@ -137,13 +138,17 @@ impl DuckdbStorage {
         let mut conns = Vec::with_capacity(READERS);
         for _ in 0..READERS {
             conns.push(Mutex::new(
-                conn.try_clone().context("opening a DuckDB read connection")?,
+                conn.try_clone()
+                    .context("opening a DuckDB read connection")?,
             ));
         }
 
         Ok(Self {
             writer: Arc::new(Mutex::new(conn)),
-            readers: Arc::new(ReaderPool { conns, next: AtomicUsize::new(0) }),
+            readers: Arc::new(ReaderPool {
+                conns,
+                next: AtomicUsize::new(0),
+            }),
         })
     }
 
@@ -228,8 +233,9 @@ impl Storage for DuckdbStorage {
                     DbValue::Text(s.kind),
                     DbValue::BigInt(s.start_time_unix_nano as i64),
                     DbValue::BigInt(s.end_time_unix_nano as i64),
-                    DbValue::BigInt(s.end_time_unix_nano.saturating_sub(s.start_time_unix_nano)
-                        as i64),
+                    DbValue::BigInt(
+                        s.end_time_unix_nano.saturating_sub(s.start_time_unix_nano) as i64
+                    ),
                     DbValue::Int(s.status_code),
                     DbValue::Text(s.status_message),
                     DbValue::Text(s.attributes.to_string()),
@@ -324,8 +330,7 @@ impl Storage for DuckdbStorage {
             let mut stmt = conn.prepare(
                 "SELECT DISTINCT name FROM spans WHERE (? = '' OR service_name = ?) ORDER BY name",
             )?;
-            let rows =
-                stmt.query_map([&service, &service], |r| r.get::<_, String>(0))?;
+            let rows = stmt.query_map([&service, &service], |r| r.get::<_, String>(0))?;
             Ok(rows.collect::<duckdb::Result<Vec<_>>>()?)
         })
         .await
@@ -404,7 +409,10 @@ impl Storage for DuckdbStorage {
                 "SELECT {SPAN_COLS} FROM spans WHERE trace_id IN ({placeholders})"
             ))?;
             let spans: Vec<SpanRecord> = stmt
-                .query_map(params_from_iter(ids.iter().map(|s| s.as_str())), row_to_span)?
+                .query_map(
+                    params_from_iter(ids.iter().map(|s| s.as_str())),
+                    row_to_span,
+                )?
                 .collect::<duckdb::Result<_>>()?;
             Ok(build_trace_summaries(&spans))
         })
@@ -641,7 +649,10 @@ mod tests {
         use std::time::Duration;
 
         let store = DuckdbStorage::open(":memory:").unwrap();
-        store.insert_spans(vec![span("t-seed", "seed", "svc-seed", 10, 0)]).await.unwrap();
+        store
+            .insert_spans(vec![span("t-seed", "seed", "svc-seed", 10, 0)])
+            .await
+            .unwrap();
 
         // Stands in for an ingest that is mid-flight.
         let held = store.writer.lock().unwrap();
@@ -662,7 +673,10 @@ mod tests {
         use std::time::Duration;
 
         let store = Arc::new(DuckdbStorage::open(":memory:").unwrap());
-        store.insert_spans(vec![span("t-seed", "seed", "svc-seed", 10, 0)]).await.unwrap();
+        store
+            .insert_spans(vec![span("t-seed", "seed", "svc-seed", 10, 0)])
+            .await
+            .unwrap();
 
         let reads = (0..READERS * 4).map(|_| {
             let store = Arc::clone(&store);
@@ -694,14 +708,24 @@ mod tests {
         assert_eq!(store.list_services().await.unwrap(), vec!["svc-a", "svc-b"]);
         assert_eq!(store.list_operations("svc-b").await.unwrap(), vec!["op-b"]);
 
-        let all = store.find_traces(TraceQuery { limit: 10, ..Default::default() }).await.unwrap();
+        let all = store
+            .find_traces(TraceQuery {
+                limit: 10,
+                ..Default::default()
+            })
+            .await
+            .unwrap();
         assert_eq!(all.len(), 2);
         assert_eq!(all[0].trace_id, "t2");
         assert_eq!(all[1].span_count, 2);
         assert_eq!(all[1].error_count, 1);
 
         let errors = store
-            .find_traces(TraceQuery { errors_only: true, limit: 10, ..Default::default() })
+            .find_traces(TraceQuery {
+                errors_only: true,
+                limit: 10,
+                ..Default::default()
+            })
             .await
             .unwrap();
         assert_eq!(errors.len(), 1);
@@ -747,7 +771,10 @@ mod tests {
             .await
             .unwrap();
         let logs = store
-            .query_logs(LogQuery { search: Some("EXPLO".into()), ..Default::default() })
+            .query_logs(LogQuery {
+                search: Some("EXPLO".into()),
+                ..Default::default()
+            })
             .await
             .unwrap();
         assert_eq!(logs.len(), 1);
@@ -773,7 +800,10 @@ mod tests {
         assert_eq!(infos.len(), 1);
         assert_eq!(infos[0].services, vec!["svc"]);
         let series = store
-            .query_metric_series(MetricQuery { name: "cpu".into(), ..Default::default() })
+            .query_metric_series(MetricQuery {
+                name: "cpu".into(),
+                ..Default::default()
+            })
             .await
             .unwrap();
         assert_eq!(series.len(), 1);

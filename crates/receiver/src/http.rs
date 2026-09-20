@@ -25,7 +25,10 @@ pub struct HttpState {
 }
 
 pub fn router(storage: DynStorage, auth: &Auth) -> Router {
-    let state = HttpState { storage, auth: Arc::new(auth.clone()) };
+    let state = HttpState {
+        storage,
+        auth: Arc::new(auth.clone()),
+    };
     Router::new()
         .route("/v1/traces", post(ingest_traces))
         .route("/v1/logs", post(ingest_logs))
@@ -54,7 +57,10 @@ fn check_auth(auth: &Auth, headers: &HeaderMap) -> Result<(), Response> {
     let expected = auth.token.as_deref().unwrap_or_default();
     match headers.get(auth.header.as_str()) {
         Some(v) if v.to_str().map(|v| v == expected).unwrap_or(false) => Ok(()),
-        _ => Err(unauthorized(format!("missing or invalid {} header", auth.header))),
+        _ => Err(unauthorized(format!(
+            "missing or invalid {} header",
+            auth.header
+        ))),
     }
 }
 
@@ -87,7 +93,10 @@ fn decode_body(headers: &HeaderMap, body: Bytes) -> Result<Payload, Response> {
     {
         Ok(Payload::Protobuf(body))
     } else {
-        Err((StatusCode::UNSUPPORTED_MEDIA_TYPE, format!("unsupported content-type {content_type}"))
+        Err((
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            format!("unsupported content-type {content_type}"),
+        )
             .into_response())
     }
 }
@@ -118,8 +127,9 @@ fn parse<T: Message + Default + serde::de::DeserializeOwned>(
         Payload::Protobuf(b) => {
             T::decode(b.as_ref()).map_err(|e| bad_request(format!("invalid protobuf: {e}")))
         }
-        Payload::Json(b) => serde_json::from_slice(b)
-            .map_err(|e| bad_request(format!("invalid OTLP JSON: {e}"))),
+        Payload::Json(b) => {
+            serde_json::from_slice(b).map_err(|e| bad_request(format!("invalid OTLP JSON: {e}")))
+        }
     }
 }
 
@@ -243,8 +253,10 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::OK);
         let stats = storage.stats().await.unwrap();
         assert_eq!(stats.spans, 1);
-        let trace =
-            storage.get_trace("0102030405060708090a0b0c0d0e0f10").await.unwrap();
+        let trace = storage
+            .get_trace("0102030405060708090a0b0c0d0e0f10")
+            .await
+            .unwrap();
         assert_eq!(trace[0].service_name, "test-svc");
         assert_eq!(trace[0].name, "GET /hello");
         assert!(trace[0].is_error());
@@ -293,8 +305,7 @@ mod tests {
         let app = router(storage.clone(), &Auth::default());
 
         // Build the request from the JSON fixture to avoid duplicating it.
-        let request: ExportTraceServiceRequest =
-            serde_json::from_str(otlp_json_traces()).unwrap();
+        let request: ExportTraceServiceRequest = serde_json::from_str(otlp_json_traces()).unwrap();
         let body = request.encode_to_vec();
         let resp = app
             .oneshot(
@@ -307,7 +318,12 @@ mod tests {
             .unwrap();
         let status = resp.status();
         let bytes = resp.into_body().collect().await.unwrap().to_bytes();
-        assert_eq!(status, StatusCode::OK, "{}", String::from_utf8_lossy(&bytes));
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "{}",
+            String::from_utf8_lossy(&bytes)
+        );
         assert_eq!(storage.stats().await.unwrap().spans, 1);
     }
 }

@@ -64,7 +64,11 @@ pub fn flatten_json(prefix: &str, v: &serde_json::Value, out: &mut Vec<(String, 
     match v {
         serde_json::Value::Object(map) => {
             for (k, val) in map {
-                let key = if prefix.is_empty() { k.clone() } else { format!("{prefix}.{k}") };
+                let key = if prefix.is_empty() {
+                    k.clone()
+                } else {
+                    format!("{prefix}.{k}")
+                };
                 flatten_json(&key, val, out);
             }
         }
@@ -93,7 +97,11 @@ pub fn summarize_fields(
             let mut top: Vec<(String, u64)> = values.into_iter().collect();
             top.sort_by_key(|(_, count)| std::cmp::Reverse(*count));
             top.truncate(5);
-            FieldInfo { name, count, top_values: top }
+            FieldInfo {
+                name,
+                count,
+                top_values: top,
+            }
         })
         .collect();
     out.sort_by(|a, b| b.count.cmp(&a.count).then(a.name.cmp(&b.name)));
@@ -175,20 +183,34 @@ pub async fn service_stats(
     start_time_min_unix_nano: Option<u64>,
     start_time_max_unix_nano: Option<u64>,
 ) -> anyhow::Result<Vec<ServiceStats>> {
-    let (spans, _) = sample_spans(storage, start_time_min_unix_nano, start_time_max_unix_nano).await?;
+    let (spans, _) =
+        sample_spans(storage, start_time_min_unix_nano, start_time_max_unix_nano).await?;
     let mut by_service: BTreeMap<&str, Vec<&SpanRecord>> = BTreeMap::new();
     for s in &spans {
-        by_service.entry(s.service_name.as_str()).or_default().push(s);
+        by_service
+            .entry(s.service_name.as_str())
+            .or_default()
+            .push(s);
     }
-    let t_min = spans.iter().map(|s| s.start_time_unix_nano).min().unwrap_or(0);
-    let t_max = spans.iter().map(|s| s.end_time_unix_nano).max().unwrap_or(0);
+    let t_min = spans
+        .iter()
+        .map(|s| s.start_time_unix_nano)
+        .min()
+        .unwrap_or(0);
+    let t_max = spans
+        .iter()
+        .map(|s| s.end_time_unix_nano)
+        .max()
+        .unwrap_or(0);
     let window_secs = ((t_max.saturating_sub(t_min)) as f64 / 1e9).max(1.0);
 
     Ok(by_service
         .into_iter()
         .map(|(service, spans)| {
-            let mut durations: Vec<f64> =
-                spans.iter().map(|s| s.duration_nanos() as f64 / 1e6).collect();
+            let mut durations: Vec<f64> = spans
+                .iter()
+                .map(|s| s.duration_nanos() as f64 / 1e6)
+                .collect();
             durations.sort_by(|a, b| a.partial_cmp(b).unwrap());
             let requests = spans
                 .iter()
@@ -230,8 +252,10 @@ pub async fn service_graph(
     }
 
     // Cross-service parent → child calls.
-    let by_id: BTreeMap<(&str, &str), &SpanRecord> =
-        spans.iter().map(|s| ((s.trace_id.as_str(), s.span_id.as_str()), s)).collect();
+    let by_id: BTreeMap<(&str, &str), &SpanRecord> = spans
+        .iter()
+        .map(|s| ((s.trace_id.as_str(), s.span_id.as_str()), s))
+        .collect();
     let mut edges: BTreeMap<(&str, &str), (u64, u64, f64)> = BTreeMap::new();
     for s in &spans {
         if s.parent_span_id.is_empty() {

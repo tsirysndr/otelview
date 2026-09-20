@@ -25,8 +25,16 @@ fn summarize_trace(trace_id: &str, spans: &[&SpanRecord]) -> TraceSummary {
         .find(|s| s.is_root())
         .or_else(|| spans.iter().min_by_key(|s| s.start_time_unix_nano))
         .expect("summarize_trace called with at least one span");
-    let start = spans.iter().map(|s| s.start_time_unix_nano).min().unwrap_or(0);
-    let end = spans.iter().map(|s| s.end_time_unix_nano).max().unwrap_or(0);
+    let start = spans
+        .iter()
+        .map(|s| s.start_time_unix_nano)
+        .min()
+        .unwrap_or(0);
+    let end = spans
+        .iter()
+        .map(|s| s.end_time_unix_nano)
+        .max()
+        .unwrap_or(0);
     let mut services: Vec<String> = spans.iter().map(|s| s.service_name.clone()).collect();
     services.sort();
     services.dedup();
@@ -85,7 +93,9 @@ pub fn span_matches(s: &SpanRecord, q: &otelview_model::TraceQuery) -> bool {
             // plain substring match over all attributes.
             let matched = match attr_q.split_once('=') {
                 Some((k, v)) => {
-                    lookup(&s.attributes, k).map(|found| found == v.trim()).unwrap_or(false)
+                    lookup(&s.attributes, k)
+                        .map(|found| found == v.trim())
+                        .unwrap_or(false)
                         || lookup(&s.resource_attributes, k)
                             .map(|found| found == v.trim())
                             .unwrap_or(false)
@@ -154,7 +164,10 @@ mod tests {
     #[test]
     fn matches_attribute_queries() {
         let s = span("t", "a", "", "svc", 0, 10);
-        let mut q = TraceQuery { attribute_query: Some("http.method=GET".into()), ..Default::default() };
+        let mut q = TraceQuery {
+            attribute_query: Some("http.method=GET".into()),
+            ..Default::default()
+        };
         assert!(span_matches(&s, &q));
         q.attribute_query = Some("http.method=POST".into());
         assert!(!span_matches(&s, &q));
@@ -167,11 +180,20 @@ mod tests {
     #[test]
     fn matches_duration_and_errors() {
         let mut s = span("t", "a", "", "svc", 0, 100);
-        let q = TraceQuery { min_duration_nanos: Some(50), ..Default::default() };
+        let q = TraceQuery {
+            min_duration_nanos: Some(50),
+            ..Default::default()
+        };
         assert!(span_matches(&s, &q));
-        let q = TraceQuery { min_duration_nanos: Some(200), ..Default::default() };
+        let q = TraceQuery {
+            min_duration_nanos: Some(200),
+            ..Default::default()
+        };
         assert!(!span_matches(&s, &q));
-        let q = TraceQuery { errors_only: true, ..Default::default() };
+        let q = TraceQuery {
+            errors_only: true,
+            ..Default::default()
+        };
         assert!(!span_matches(&s, &q));
         s.status_code = 2;
         assert!(span_matches(&s, &q));

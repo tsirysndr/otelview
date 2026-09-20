@@ -44,11 +44,16 @@ pub async fn serve(cfg: &Config, storage: DynStorage) -> Result<()> {
         .await
         .with_context(|| format!("binding UI/API server to {addr}"))?;
     tracing::info!("web UI listening on http://{addr}");
-    axum::serve(listener, router).await.context("UI/API server failed")
+    axum::serve(listener, router)
+        .await
+        .context("UI/API server failed")
 }
 
 pub fn router(cfg: &Config, storage: DynStorage) -> Router {
-    let state = ApiState { storage, config: Arc::new(cfg.clone()) };
+    let state = ApiState {
+        storage,
+        config: Arc::new(cfg.clone()),
+    };
     let mut api = Router::new()
         .route("/services", get(services))
         .route("/operations", get(operations))
@@ -135,7 +140,9 @@ fn parse_lookback(s: &str) -> Option<u64> {
         Some('d') => (&s[..s.len() - 1], 86_400),
         _ => (s, 1),
     };
-    num.parse::<f64>().ok().map(|n| (n * mult as f64 * 1e9) as u64)
+    num.parse::<f64>()
+        .ok()
+        .map(|n| (n * mult as f64 * 1e9) as u64)
 }
 
 #[derive(Deserialize)]
@@ -150,11 +157,12 @@ async fn services(State(state): State<ApiState>) -> Response {
     }
 }
 
-async fn operations(
-    State(state): State<ApiState>,
-    Query(p): Query<ServiceParams>,
-) -> Response {
-    match state.storage.list_operations(p.service.as_deref().unwrap_or("")).await {
+async fn operations(State(state): State<ApiState>, Query(p): Query<ServiceParams>) -> Response {
+    match state
+        .storage
+        .list_operations(p.service.as_deref().unwrap_or(""))
+        .await
+    {
         Ok(s) => Json(s).into_response(),
         Err(e) => internal(e),
     }
@@ -203,10 +211,7 @@ async fn traces(State(state): State<ApiState>, Query(p): Query<TraceParams>) -> 
     }
 }
 
-async fn trace_detail(
-    State(state): State<ApiState>,
-    Path(trace_id): Path<String>,
-) -> Response {
+async fn trace_detail(State(state): State<ApiState>, Path(trace_id): Path<String>) -> Response {
     match state.storage.get_trace(&trace_id).await {
         Ok(spans) if spans.is_empty() => {
             (StatusCode::NOT_FOUND, format!("trace {trace_id} not found")).into_response()
@@ -243,8 +248,7 @@ async fn logs(State(state): State<ApiState>, Query(p): Query<LogParams>) -> Resp
         Some(q) => match kql::parse(q) {
             Ok(expr) => expr,
             Err(e) => {
-                return (StatusCode::BAD_REQUEST, format!("invalid KQL query: {e}"))
-                    .into_response()
+                return (StatusCode::BAD_REQUEST, format!("invalid KQL query: {e}")).into_response()
             }
         },
         None => None,
@@ -274,10 +278,7 @@ async fn logs(State(state): State<ApiState>, Query(p): Query<LogParams>) -> Resp
 
 /// Kibana-style field discovery: flattened attribute keys with counts and
 /// top values, from a sample of matching logs.
-async fn log_fields_handler(
-    State(state): State<ApiState>,
-    Query(p): Query<LogParams>,
-) -> Response {
+async fn log_fields_handler(State(state): State<ApiState>, Query(p): Query<LogParams>) -> Response {
     let time_min = p
         .lookback
         .as_deref()
@@ -332,8 +333,13 @@ async fn trace_fields_handler(
             .map(|w| now_unix_nanos().saturating_sub(w))
     });
     let max = p.end_ms.map(|ms| ms * 1_000_000);
-    match analytics::trace_fields(&state.storage, p.service.filter(|s| !s.is_empty()), min, max)
-        .await
+    match analytics::trace_fields(
+        &state.storage,
+        p.service.filter(|s| !s.is_empty()),
+        min,
+        max,
+    )
+    .await
     {
         Ok(v) => Json(v).into_response(),
         Err(e) => internal(e),
@@ -362,10 +368,7 @@ struct SeriesParams {
     max_points: Option<usize>,
 }
 
-async fn metric_series(
-    State(state): State<ApiState>,
-    Query(p): Query<SeriesParams>,
-) -> Response {
+async fn metric_series(State(state): State<ApiState>, Query(p): Query<SeriesParams>) -> Response {
     let time_min_unix_nano = p.start_ms.map(|ms| ms * 1_000_000).or_else(|| {
         p.lookback
             .as_deref()
@@ -471,8 +474,7 @@ async fn log_histogram_handler(
         Some(query) => match kql::parse(query) {
             Ok(expr) => expr,
             Err(e) => {
-                return (StatusCode::BAD_REQUEST, format!("invalid KQL query: {e}"))
-                    .into_response()
+                return (StatusCode::BAD_REQUEST, format!("invalid KQL query: {e}")).into_response()
             }
         },
         None => None,
@@ -512,7 +514,11 @@ async fn static_handler(uri: Uri) -> Response {
             let mime = mime_guess(path);
             ([(header::CONTENT_TYPE, mime)], content.data).into_response()
         }
-        None => (StatusCode::NOT_FOUND, "UI assets not embedded in this build").into_response(),
+        None => (
+            StatusCode::NOT_FOUND,
+            "UI assets not embedded in this build",
+        )
+            .into_response(),
     }
 }
 
@@ -543,7 +549,10 @@ mod tests {
     use tower::ServiceExt;
 
     fn test_state() -> (Config, DynStorage) {
-        (Config::default(), Arc::new(MemoryStorage::new(&MemoryConfig::default())))
+        (
+            Config::default(),
+            Arc::new(MemoryStorage::new(&MemoryConfig::default())),
+        )
     }
 
     fn span(trace: &str, svc: &str, start: u64) -> otelview_model::SpanRecord {
@@ -581,7 +590,10 @@ mod tests {
     #[tokio::test]
     async fn traces_and_services_endpoints() {
         let (cfg, storage) = test_state();
-        storage.insert_spans(vec![span("t1", "svc-a", 100)]).await.unwrap();
+        storage
+            .insert_spans(vec![span("t1", "svc-a", 100)])
+            .await
+            .unwrap();
         let app = router(&cfg, storage);
 
         let (status, v) = get_json(app.clone(), "/api/services").await;
@@ -664,8 +676,7 @@ mod tests {
             .unwrap();
         let app = router(&cfg, storage);
         // Window [3s, 7s] in millis picks only the middle trace.
-        let (status, v) =
-            get_json(app, "/api/traces?start_ms=3000&end_ms=7000&limit=10").await;
+        let (status, v) = get_json(app, "/api/traces?start_ms=3000&end_ms=7000&limit=10").await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(v.as_array().unwrap().len(), 1);
         assert_eq!(v[0]["trace_id"], "mid");
@@ -744,10 +755,8 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         let buckets = v.as_array().unwrap();
         assert_eq!(buckets.len(), 5);
-        let total_err: u64 =
-            buckets.iter().map(|b| b["error"].as_u64().unwrap()).sum();
-        let total_info: u64 =
-            buckets.iter().map(|b| b["info"].as_u64().unwrap()).sum();
+        let total_err: u64 = buckets.iter().map(|b| b["error"].as_u64().unwrap()).sum();
+        let total_info: u64 = buckets.iter().map(|b| b["info"].as_u64().unwrap()).sum();
         assert_eq!(total_err, 2);
         assert_eq!(total_info, 1);
     }
@@ -769,7 +778,11 @@ mod tests {
             scope_name: String::new(),
         };
         storage
-            .insert_logs(vec![mk(9, "GET", 200), mk(17, "POST", 500), mk(9, "POST", 201)])
+            .insert_logs(vec![
+                mk(9, "GET", 200),
+                mk(17, "POST", 500),
+                mk(9, "POST", 201),
+            ])
             .await
             .unwrap();
         let app = router(&cfg, storage);
@@ -788,8 +801,12 @@ mod tests {
 
         let (status, v) = get_json(app, "/api/logs/fields").await;
         assert_eq!(status, StatusCode::OK);
-        let names: Vec<&str> =
-            v.as_array().unwrap().iter().map(|f| f["name"].as_str().unwrap()).collect();
+        let names: Vec<&str> = v
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|f| f["name"].as_str().unwrap())
+            .collect();
         assert!(names.contains(&"http.method"));
         assert!(names.contains(&"level"));
     }
@@ -804,8 +821,12 @@ mod tests {
         let app = router(&cfg, storage);
         let (status, v) = get_json(app, "/api/traces/fields").await;
         assert_eq!(status, StatusCode::OK);
-        let names: Vec<&str> =
-            v.as_array().unwrap().iter().map(|f| f["name"].as_str().unwrap()).collect();
+        let names: Vec<&str> = v
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|f| f["name"].as_str().unwrap())
+            .collect();
         assert!(names.contains(&"http.method"));
         assert!(names.contains(&"host.name"));
     }

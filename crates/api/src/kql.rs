@@ -44,7 +44,10 @@ enum Token {
     Or,
     Not,
     /// A `field:value` pair or a bare term.
-    Term { field: Option<String>, value: String },
+    Term {
+        field: Option<String>,
+        value: String,
+    },
 }
 
 pub fn parse(input: &str) -> Result<Option<Expr>, String> {
@@ -78,7 +81,10 @@ fn lex(input: &str) -> Result<Vec<Token>, String> {
             }
             '"' => {
                 let (s, next) = read_quoted(&chars, i)?;
-                tokens.push(Token::Term { field: None, value: s });
+                tokens.push(Token::Term {
+                    field: None,
+                    value: s,
+                });
                 i = next;
             }
             _ => {
@@ -152,7 +158,11 @@ impl Parser {
             self.pos += 1;
             parts.push(self.and_expr()?);
         }
-        Ok(if parts.len() == 1 { parts.pop().unwrap() } else { Expr::Or(parts) })
+        Ok(if parts.len() == 1 {
+            parts.pop().unwrap()
+        } else {
+            Expr::Or(parts)
+        })
     }
 
     fn and_expr(&mut self) -> Result<Expr, String> {
@@ -170,7 +180,11 @@ impl Parser {
                 _ => break,
             }
         }
-        Ok(if parts.len() == 1 { parts.pop().unwrap() } else { Expr::And(parts) })
+        Ok(if parts.len() == 1 {
+            parts.pop().unwrap()
+        } else {
+            Expr::And(parts)
+        })
     }
 
     fn unary(&mut self) -> Result<Expr, String> {
@@ -204,7 +218,12 @@ impl Parser {
 }
 
 fn split_op(value: &str) -> (Op, String) {
-    for (prefix, op) in [(">=", Op::Gte), ("<=", Op::Lte), (">", Op::Gt), ("<", Op::Lt)] {
+    for (prefix, op) in [
+        (">=", Op::Gte),
+        ("<=", Op::Lte),
+        (">", Op::Gt),
+        ("<", Op::Lt),
+    ] {
         if let Some(rest) = value.strip_prefix(prefix) {
             return (op, rest.to_string());
         }
@@ -293,10 +312,7 @@ fn matches_value(op: Op, expected: &str, actual: &Value) -> bool {
     match op {
         Op::Eq => {
             if actual.is_object() || actual.is_array() {
-                return glob_match(
-                    &format!("*{expected}*"),
-                    &value_to_string(actual),
-                );
+                return glob_match(&format!("*{expected}*"), &value_to_string(actual));
             }
             glob_match(expected, &value_to_string(actual))
         }
@@ -325,11 +341,19 @@ pub fn eval(expr: &Expr, log: &LogRecord) -> bool {
         Expr::And(parts) => parts.iter().all(|e| eval(e, log)),
         Expr::Or(parts) => parts.iter().any(|e| eval(e, log)),
         Expr::Not(inner) => !eval(inner, log),
-        Expr::Match { field: Some(field), op, value } => {
+        Expr::Match {
+            field: Some(field),
+            op,
+            value,
+        } => {
             let values = field_values(log, field);
             !values.is_empty() && values.iter().any(|v| matches_value(*op, value, v))
         }
-        Expr::Match { field: None, op: Op::Eq, value } => {
+        Expr::Match {
+            field: None,
+            op: Op::Eq,
+            value,
+        } => {
             // Bare term: substring over the whole record.
             let hay = format!(
                 "{} {} {} {} {}",
@@ -413,7 +437,9 @@ mod tests {
         assert!(matches("http.method:GET or level:error"));
         assert!(!matches("http.method:GET and level:error"));
         assert!(matches("not http.method:GET"));
-        assert!(matches("(http.method:GET or http.method:POST) and service:payments"));
+        assert!(matches(
+            "(http.method:GET or http.method:POST) and service:payments"
+        ));
         // adjacency = and
         assert!(matches("declined service:payments"));
         assert!(!matches("declined service:checkout"));

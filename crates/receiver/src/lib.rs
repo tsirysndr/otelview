@@ -19,12 +19,10 @@ pub mod readers;
 
 /// Serve the gRPC endpoint (ingest + readers). Runs until aborted.
 pub async fn serve_grpc(cfg: &Config, storage: DynStorage) -> Result<()> {
-    let addr = cfg
-        .receivers
-        .grpc
-        .listen
-        .parse()
-        .with_context(|| format!("invalid gRPC listen address {}", cfg.receivers.grpc.listen))?;
+    let addr =
+        cfg.receivers.grpc.listen.parse().with_context(|| {
+            format!("invalid gRPC listen address {}", cfg.receivers.grpc.listen)
+        })?;
     let auth = grpc::ServerAuth::from_config(&cfg.auth);
 
     use opentelemetry_proto::tonic::collector::logs::v1::logs_service_server::LogsServiceServer;
@@ -72,16 +70,16 @@ pub async fn serve_grpc(cfg: &Config, storage: DynStorage) -> Result<()> {
 
 /// Serve the OTLP/HTTP endpoint. Runs until aborted.
 pub async fn serve_http(cfg: &Config, storage: DynStorage) -> Result<()> {
-    let addr: std::net::SocketAddr = cfg
-        .receivers
-        .http
-        .listen
-        .parse()
-        .with_context(|| format!("invalid HTTP listen address {}", cfg.receivers.http.listen))?;
+    let addr: std::net::SocketAddr =
+        cfg.receivers.http.listen.parse().with_context(|| {
+            format!("invalid HTTP listen address {}", cfg.receivers.http.listen)
+        })?;
     let router = http::router(storage, &cfg.auth);
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .with_context(|| format!("binding OTLP HTTP receiver to {addr}"))?;
     tracing::info!(%addr, "OTLP HTTP receiver listening");
-    axum::serve(listener, router).await.context("HTTP receiver failed")
+    axum::serve(listener, router)
+        .await
+        .context("HTTP receiver failed")
 }

@@ -43,7 +43,8 @@ pub struct SpanRecord {
 
 impl SpanRecord {
     pub fn duration_nanos(&self) -> u64 {
-        self.end_time_unix_nano.saturating_sub(self.start_time_unix_nano)
+        self.end_time_unix_nano
+            .saturating_sub(self.start_time_unix_nano)
     }
     pub fn is_error(&self) -> bool {
         self.status_code == 2

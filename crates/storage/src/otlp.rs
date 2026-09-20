@@ -32,7 +32,11 @@ pub fn any_value_to_json(v: &AnyValue) -> Value {
 pub fn kvs_to_json(kvs: &[KeyValue]) -> Value {
     let mut map = Map::new();
     for kv in kvs {
-        let val = kv.value.as_ref().map(any_value_to_json).unwrap_or(Value::Null);
+        let val = kv
+            .value
+            .as_ref()
+            .map(any_value_to_json)
+            .unwrap_or(Value::Null);
         map.insert(kv.key.clone(), val);
     }
     Value::Object(map)
@@ -58,7 +62,10 @@ pub fn json_to_any_value(v: &Value) -> AnyValue {
         })),
     };
     #[allow(clippy::needless_update)]
-    AnyValue { value, ..Default::default() }
+    AnyValue {
+        value,
+        ..Default::default()
+    }
 }
 
 pub fn json_to_kvs(v: &Value) -> Vec<KeyValue> {
@@ -207,10 +214,7 @@ pub fn spans_to_traces_data(spans: &[SpanRecord]) -> TracesData {
                                 .and_then(Value::as_str)
                                 .unwrap_or_default()
                                 .to_string(),
-                            attributes: e
-                                .get("attributes")
-                                .map(json_to_kvs)
-                                .unwrap_or_default(),
+                            attributes: e.get("attributes").map(json_to_kvs).unwrap_or_default(),
                             ..Default::default()
                         })
                         .collect(),
@@ -230,10 +234,7 @@ pub fn spans_to_traces_data(spans: &[SpanRecord]) -> TracesData {
                                 .and_then(Value::as_str)
                                 .and_then(|h| hex::decode(h).ok())
                                 .unwrap_or_default(),
-                            attributes: l
-                                .get("attributes")
-                                .map(json_to_kvs)
-                                .unwrap_or_default(),
+                            attributes: l.get("attributes").map(json_to_kvs).unwrap_or_default(),
                             ..Default::default()
                         })
                         .collect(),
@@ -253,7 +254,8 @@ pub fn spans_to_traces_data(spans: &[SpanRecord]) -> TracesData {
                     status: Some(Status {
                         message: s.status_message.clone(),
                         code: status::StatusCode::try_from(s.status_code)
-                            .unwrap_or(status::StatusCode::Unset) as i32,
+                            .unwrap_or(status::StatusCode::Unset)
+                            as i32,
                     }),
                     ..Default::default()
                 }
@@ -264,7 +266,11 @@ pub fn spans_to_traces_data(spans: &[SpanRecord]) -> TracesData {
                 attributes: json_to_kvs(&resource_attrs),
                 ..Default::default()
             }),
-            scope_spans: vec![ScopeSpans { scope: None, spans: pb_spans, schema_url: String::new() }],
+            scope_spans: vec![ScopeSpans {
+                scope: None,
+                spans: pb_spans,
+                schema_url: String::new(),
+            }],
             schema_url: String::new(),
         });
     }
@@ -281,7 +287,11 @@ pub fn logs_from_resource_logs(resource_logs: &[ResourceLogs]) -> Vec<LogRecord>
             .map(|r| kvs_to_json(&r.attributes))
             .unwrap_or_else(|| json!({}));
         for sl in &rl.scope_logs {
-            let scope_name = sl.scope.as_ref().map(|s| s.name.clone()).unwrap_or_default();
+            let scope_name = sl
+                .scope
+                .as_ref()
+                .map(|s| s.name.clone())
+                .unwrap_or_default();
             for lr in &sl.log_records {
                 let time = if lr.time_unix_nano != 0 {
                     lr.time_unix_nano
@@ -293,7 +303,11 @@ pub fn logs_from_resource_logs(resource_logs: &[ResourceLogs]) -> Vec<LogRecord>
                     observed_time_unix_nano: lr.observed_time_unix_nano,
                     severity_number: lr.severity_number,
                     severity_text: lr.severity_text.clone(),
-                    body: lr.body.as_ref().map(any_value_to_json).unwrap_or(Value::Null),
+                    body: lr
+                        .body
+                        .as_ref()
+                        .map(any_value_to_json)
+                        .unwrap_or(Value::Null),
                     attributes: kvs_to_json(&lr.attributes),
                     resource_attributes: resource_attrs.clone(),
                     service_name: service.clone(),
@@ -358,7 +372,11 @@ pub fn logs_to_logs_data(logs: &[LogRecord]) -> opentelemetry_proto::tonic::logs
                 attributes: json_to_kvs(&resource_attrs),
                 ..Default::default()
             }),
-            scope_logs: vec![ScopeLogs { scope: None, log_records: records, ..Default::default() }],
+            scope_logs: vec![ScopeLogs {
+                scope: None,
+                log_records: records,
+                ..Default::default()
+            }],
             ..Default::default()
         });
     }
@@ -496,7 +514,11 @@ pub fn metric_points_to_metrics_data(
                 attributes: json_to_kvs(&resource_attrs),
                 ..Default::default()
             }),
-            scope_metrics: vec![ScopeMetrics { scope: None, metrics, ..Default::default() }],
+            scope_metrics: vec![ScopeMetrics {
+                scope: None,
+                metrics,
+                ..Default::default()
+            }],
             ..Default::default()
         });
     }
@@ -566,8 +588,11 @@ fn convert_metric(
         }
         Some(metric::Data::ExponentialHistogram(h)) => {
             for dp in &h.data_points {
-                let mut p =
-                    base(MetricType::ExponentialHistogram, dp.time_unix_nano, &dp.attributes);
+                let mut p = base(
+                    MetricType::ExponentialHistogram,
+                    dp.time_unix_nano,
+                    &dp.attributes,
+                );
                 p.value = dp.sum.unwrap_or(0.0);
                 p.count = dp.count;
                 p.extra = json!({
@@ -625,7 +650,10 @@ mod tests {
             kind: span::SpanKind::Server as i32,
             start_time_unix_nano: 1_000,
             end_time_unix_nano: 5_000,
-            status: Some(Status { code: status::StatusCode::Error as i32, message: "boom".into() }),
+            status: Some(Status {
+                code: status::StatusCode::Error as i32,
+                message: "boom".into(),
+            }),
             attributes: vec![KeyValue {
                 key: "http.method".into(),
                 value: Some(AnyValue {
