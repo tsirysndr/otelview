@@ -26,3 +26,10 @@ tonic-prost-build = "0.14"
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 tempfile = "3"
+serde_json = { workspace = true }
+
+# A plain timed run rather than a criterion harness, so `--bench` must not
+# hand it criterion's CLI flags.
+[[bench]]
+name = "duck_ingest"
+harness = false
