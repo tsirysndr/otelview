@@ -15,6 +15,7 @@ import { EmptyState } from "../components/EmptyState";
 import { Field } from "../components/Field";
 import { KqlInput } from "../components/KqlInput";
 import { LogHistogram } from "../components/LogHistogram";
+import { SkeletonHistogram, SkeletonRows } from "../components/Skeleton";
 import { FilterSelect } from "../components/FilterSelect";
 import { ServiceChip } from "../components/ServiceChip";
 
@@ -43,7 +44,7 @@ export function LogsView() {
   const { data: services = [] } = useQuery({ queryKey: ["services"], queryFn: api.services });
   const [fieldsOpen, setFieldsOpen] = useAtom(logFieldsOpenAtom);
 
-  const { data: histogram = [] } = useQuery({
+  const { data: histogram = [], isLoading: histogramLoading } = useQuery({
     queryKey: ["log-histogram", filters, timeParams],
     queryFn: () =>
       api.logHistogram({
@@ -147,7 +148,12 @@ export function LogsView() {
           {kqlError}
         </div>
       )}
-      {histogram.length > 0 && !kqlError && (
+      {histogramLoading && !kqlError && (
+        <div className="shrink-0 border-b border-divider px-2 pt-1">
+          <SkeletonHistogram />
+        </div>
+      )}
+      {!histogramLoading && histogram.length > 0 && !kqlError && (
         <div className="shrink-0 border-b border-divider px-2 pt-1">
           <LogHistogram buckets={histogram} />
         </div>
@@ -192,7 +198,7 @@ export function LogsView() {
         </aside>
       )}
       <div className="min-h-0 min-w-0 flex-1 overflow-y-auto font-mono">
-        {isLoading && <p className="p-4 text-sm text-default-500">loading…</p>}
+        {isLoading && <SkeletonRows rows={14} label="loading logs" />}
         {!isLoading && logs.length === 0 && (
           <EmptyState
             icon={<IconAlignLeft size={44} stroke={1.2} />}

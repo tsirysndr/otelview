@@ -8,6 +8,7 @@ import { serviceNeon } from "../lib/colors";
 import { fmtCount, fmtDuration } from "../lib/format";
 import { EmptyState } from "../components/EmptyState";
 import { ServiceMap } from "../components/ServiceMap";
+import { Skeleton, SkeletonTable } from "../components/Skeleton";
 
 /** APM-style overview: dependency map + per-service RED metrics
  * (rate, errors, duration percentiles) derived from recent traces. */
@@ -30,7 +31,21 @@ export function ServicesView() {
   });
 
   const loading = graphLoading || statsLoading;
-  if (!loading && stats.length === 0) {
+  if (loading) {
+    return (
+      <div className="flex h-full min-h-0 flex-col overflow-y-auto">
+        <div className="shrink-0 border-b border-divider p-3">
+          <Skeleton className="mb-2 h-3 w-24" />
+          <Skeleton className="h-40 w-full rounded-md" />
+        </div>
+        <div className="p-3">
+          <Skeleton className="mb-2 h-3 w-24" />
+          <SkeletonTable rows={8} cols={5} label="loading service metrics" />
+        </div>
+      </div>
+    );
+  }
+  if (stats.length === 0) {
     return (
       <EmptyState
         icon={<IconTopologyStar3 size={44} stroke={1.2} />}

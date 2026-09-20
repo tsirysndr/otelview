@@ -15,6 +15,7 @@ import { LineChart, type ChartSeries } from "../components/LineChart";
 import { EmptyState } from "../components/EmptyState";
 import { Field } from "../components/Field";
 import { FilterSelect } from "../components/FilterSelect";
+import { SkeletonChart, SkeletonList } from "../components/Skeleton";
 
 const TYPE_COLORS: Record<string, "secondary" | "primary" | "warning" | "success" | "default"> = {
   gauge: "secondary",
@@ -47,7 +48,7 @@ export function MetricsView() {
   const active = selected ?? metrics[0]?.name ?? null;
   const activeInfo = metrics.find((m) => m.name === active);
 
-  const { data: series = [] } = useQuery({
+  const { data: series = [], isLoading: seriesLoading } = useQuery({
     queryKey: ["series", active, service, func, agg, timeParams],
     queryFn: () =>
       api.metricSeries({
@@ -91,7 +92,7 @@ export function MetricsView() {
           metrics ({metrics.length})
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto">
-          {isLoading && <p className="p-3 text-xs text-default-500">loading…</p>}
+          {isLoading && <SkeletonList rows={12} label="loading metrics" />}
           {metrics.map((m) => (
             <button
               key={m.name}
@@ -167,7 +168,9 @@ export function MetricsView() {
               </Field>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-3">
-              {chartSeries.length === 0 ? (
+              {seriesLoading ? (
+                <SkeletonChart label="loading the series" />
+              ) : chartSeries.length === 0 ? (
                 <p className="text-sm text-default-500">no data points in this window</p>
               ) : (
                 <LineChart series={chartSeries} unit={unitLabel} height={320} />

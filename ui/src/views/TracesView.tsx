@@ -19,6 +19,7 @@ import { Field } from "../components/Field";
 import { FilterSelect } from "../components/FilterSelect";
 import { ScatterPlot } from "../components/ScatterPlot";
 import { ServiceChip } from "../components/ServiceChip";
+import { SkeletonRows, SkeletonWaterfall } from "../components/Skeleton";
 import { Waterfall } from "../components/Waterfall";
 
 function TraceList() {
@@ -128,7 +129,7 @@ function TraceList() {
 
       {/* results */}
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {isLoading && <p className="p-4 text-sm text-default-500">searching…</p>}
+        {isLoading && <SkeletonRows rows={12} label="searching traces" />}
         {!isLoading && traces.length === 0 && (
           <EmptyState
             icon={<IconRoute size={44} stroke={1.2} />}
@@ -234,7 +235,7 @@ function TraceDetail({ traceId }: { traceId: string }) {
           </span>
         )}
       </div>
-      {isLoading && <p className="p-4 text-sm text-default-500">loading trace…</p>}
+      {isLoading && <SkeletonWaterfall />}
       {isError && <p className="p-4 text-sm text-danger">trace not found</p>}
       {spans && spans.length > 0 && <Waterfall spans={spans} />}
     </div>

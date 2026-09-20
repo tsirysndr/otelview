@@ -28,6 +28,17 @@ export default {
           "monospace",
         ],
       },
+      keyframes: {
+        // The sweep behind the loading skeletons. Only the highlight moves,
+        // so the placeholder itself keeps whatever colour the active theme
+        // gives it.
+        shimmer: {
+          "100%": { transform: "translateX(100%)" },
+        },
+      },
+      animation: {
+        shimmer: "shimmer 1.6s ease-in-out infinite",
+      },
       colors: {
         // Synthwave accents not covered by HeroUI semantic slots.
         neon: {
