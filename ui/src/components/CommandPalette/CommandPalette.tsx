@@ -462,7 +462,12 @@ export function CommandPalette() {
   );
 }
 
-const GROUP = "px-1 text-[11px] uppercase tracking-wide text-default-400";
+// Target the heading element rather than the group wrapper: `text-transform`
+// inherits, so styling the wrapper shouted every service name, operation and
+// log line inside the group as well.
+const GROUP =
+  "px-1 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:uppercase " +
+  "[&_[cmdk-group-heading]]:tracking-wide [&_[cmdk-group-heading]]:text-default-400";
 const ITEM =
   "flex items-center gap-2 rounded-md px-3 py-2 text-sm text-default-600";
 
