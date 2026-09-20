@@ -1,8 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
-import { IconTopologyStar3 } from "@tabler/icons-react";
+import { IconAlignLeft, IconChartLine, IconTopologyStar3 } from "@tabler/icons-react";
 import { useAtomValue, useSetAtom } from "jotai";
 import { liveAtom, openTraceIdAtom, traceFiltersAtom, viewAtom } from "../state/atoms";
 import { useTimeParams } from "../hooks/useTimeParams";
+import { useCorrelate } from "../hooks/useCorrelate";
 import { api } from "../lib/api";
 import { serviceNeon } from "../lib/colors";
 import { fmtCount, fmtDuration } from "../lib/format";
@@ -18,6 +19,7 @@ export function ServicesView() {
   const setView = useSetAtom(viewAtom);
   const setOpenTrace = useSetAtom(openTraceIdAtom);
   const setTraceFilters = useSetAtom(traceFiltersAtom);
+  const correlate = useCorrelate();
 
   const { data: graph, isLoading: graphLoading } = useQuery({
     queryKey: ["service-graph", timeParams],
@@ -93,7 +95,8 @@ export function ServicesView() {
               <th className="py-1.5 pr-2 text-right font-medium">p95</th>
               <th className="py-1.5 pr-2 text-right font-medium">p99</th>
               <th className="py-1.5 pr-2 text-right font-medium">spans</th>
-              <th className="py-1.5 font-medium">latency</th>
+              <th className="py-1.5 pr-2 font-medium">latency</th>
+              <th className="py-1.5 font-medium">signals</th>
             </tr>
           </thead>
           <tbody>
@@ -138,7 +141,7 @@ export function ServicesView() {
                   <td className="py-1.5 pr-2 text-right tabular-nums text-default-500">
                     {fmtCount(s.span_count)}
                   </td>
-                  <td className="py-1.5">
+                  <td className="py-1.5 pr-2">
                     <div className="h-1.5 w-full max-w-40 overflow-hidden rounded bg-content2">
                       <div
                         className="h-full rounded"
@@ -149,6 +152,28 @@ export function ServicesView() {
                       />
                     </div>
                   </td>
+                  {/* The row already opens traces; these reach the other two
+                      signals for the same service without leaving the table. */}
+                  <td className="py-1.5" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => correlate.serviceToLogs(s.service)}
+                        aria-label={`Logs for ${s.service}`}
+                        title={`logs for ${s.service}`}
+                        className="rounded p-1 text-default-400 transition-colors hover:text-neon-cyan"
+                      >
+                        <IconAlignLeft size={14} />
+                      </button>
+                      <button
+                        onClick={() => correlate.serviceToMetrics(s.service)}
+                        aria-label={`Metrics for ${s.service}`}
+                        title={`metrics for ${s.service}`}
+                        className="rounded p-1 text-default-400 transition-colors hover:text-neon-cyan"
+                      >
+                        <IconChartLine size={14} />
+                      </button>
+                    </div>
+                  </td>
                 </tr>
               );
             })}
@@ -156,7 +181,7 @@ export function ServicesView() {
         </table>
         <p className="mt-2 text-[10px] text-default-400">
           computed from up to 250 recent traces in the selected window · requests =
-          server/root spans · click a row to see its traces
+          server/root spans · click a row for its traces, or the icons for its logs and metrics
         </p>
       </div>
     </div>

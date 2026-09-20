@@ -94,12 +94,17 @@ export interface LogFilters {
   service: string;
   minSeverity: number;
   search: string;
+  /** Set when following a trace: narrows logs to that trace (and span). */
+  traceId: string;
+  spanId: string;
   limit: number;
 }
 export const logFiltersAtom = atom<LogFilters>({
   service: "",
   minSeverity: 0,
   search: "",
+  traceId: "",
+  spanId: "",
   limit: 300,
 });
 

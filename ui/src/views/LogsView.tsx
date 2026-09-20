@@ -1,4 +1,10 @@
-import { IconAlignLeft, IconLayoutSidebarLeftCollapse, IconLayoutSidebarLeftExpand } from "@tabler/icons-react";
+import {
+  IconAlignLeft,
+  IconLayoutSidebarLeftCollapse,
+  IconLayoutSidebarLeftExpand,
+  IconRoute,
+  IconX,
+} from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import {
@@ -9,6 +15,7 @@ import {
   selectedLogAtom,
 } from "../state/atoms";
 import { useTimeParams } from "../hooks/useTimeParams";
+import { useCorrelate } from "../hooks/useCorrelate";
 import { api, ApiError, type LogRecord } from "../lib/api";
 import { bodyPreview, fmtTime, severityInfo } from "../lib/format";
 import { EmptyState } from "../components/EmptyState";
@@ -43,6 +50,7 @@ export function LogsView() {
 
   const { data: services = [] } = useQuery({ queryKey: ["services"], queryFn: api.services });
   const [fieldsOpen, setFieldsOpen] = useAtom(logFieldsOpenAtom);
+  const correlate = useCorrelate();
 
   const { data: histogram = [], isLoading: histogramLoading } = useQuery({
     queryKey: ["log-histogram", filters, timeParams],
@@ -51,6 +59,7 @@ export function LogsView() {
         service: filters.service || undefined,
         min_severity: filters.minSeverity || undefined,
         kql: filters.search || undefined,
+        trace_id: filters.traceId || undefined,
         ...timeParams,
         buckets: 60,
       }),
@@ -65,6 +74,7 @@ export function LogsView() {
         service: filters.service || undefined,
         min_severity: filters.minSeverity || undefined,
         kql: filters.search || undefined,
+        trace_id: filters.traceId || undefined,
         ...timeParams,
         limit: filters.limit,
       }),
@@ -73,6 +83,12 @@ export function LogsView() {
   });
   const kqlError =
     error instanceof ApiError && error.status === 400 ? error.message : null;
+
+  // The API filters by trace but not by span, so the span narrowing is
+  // applied here on the trace's (already small) result set.
+  const shown = filters.spanId
+    ? logs.filter((l) => l.span_id === filters.spanId)
+    : logs;
 
   // The server returns at most `limit`, so a full page means there is more in
   // the window than is on screen. Worth saying: without it a capped list is
@@ -141,9 +157,42 @@ export function LogsView() {
           )}
         </button>
         <span className="pb-2 text-[11px] text-default-500">
-          {logs.length} records{live ? " · tailing" : ""}
+          {shown.length} records{live ? " · tailing" : ""}
         </span>
       </div>
+
+      {filters.traceId && (
+        <div className="flex shrink-0 items-center gap-2 border-b border-divider bg-content1 px-3 py-1.5 text-xs">
+          <IconRoute size={14} className="shrink-0 text-neon-cyan" />
+          <span className="text-default-500">
+            showing logs for trace{" "}
+            <span className="font-mono text-neon-cyan">
+              {filters.traceId.slice(0, 16)}…
+            </span>
+            {filters.spanId && (
+              <>
+                {" "}· span{" "}
+                <span className="font-mono text-neon-cyan">{filters.spanId}</span>
+              </>
+            )}
+          </span>
+          <button
+            onClick={() =>
+              correlate.logToTrace(filters.traceId, { spanId: filters.spanId || undefined })
+            }
+            className="rounded border border-divider px-1.5 py-0.5 text-[11px] text-default-600 transition-colors hover:border-neon-cyan hover:text-neon-cyan"
+          >
+            open the trace
+          </button>
+          <button
+            onClick={() => setFilters({ ...filters, traceId: "", spanId: "" })}
+            aria-label="Clear trace filter"
+            className="ml-auto flex items-center gap-1 text-[11px] text-default-500 transition-colors hover:text-foreground"
+          >
+            <IconX size={12} /> clear
+          </button>
+        </div>
+      )}
 
       {kqlError && (
         <div className="shrink-0 border-b border-divider bg-danger/10 px-3 py-1.5 text-xs text-danger">
@@ -201,14 +250,14 @@ export function LogsView() {
       )}
       <div className="min-h-0 min-w-0 flex-1 overflow-y-auto font-mono">
         {isLoading && <SkeletonRows rows={14} label="loading logs" />}
-        {!isLoading && logs.length === 0 && (
+        {!isLoading && shown.length === 0 && (
           <EmptyState
             icon={<IconAlignLeft size={44} stroke={1.2} />}
             title="no log records yet"
             hint="Nothing matches the current filters and time range — or no logs have been received."
           />
         )}
-        {logs.map((l, i) => {
+        {shown.map((l, i) => {
           const sev = severityInfo(l.severity_number, l.severity_text);
           const selected =
             selectedLog != null &&

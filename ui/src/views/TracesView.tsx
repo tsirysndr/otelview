@@ -1,5 +1,5 @@
 import { Button, Chip, Input, Switch } from "@heroui/react";
-import { IconArrowLeft, IconRoute } from "@tabler/icons-react";
+import { IconAlignLeft, IconArrowLeft, IconRoute } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import {
@@ -10,6 +10,7 @@ import {
 } from "../state/atoms";
 import { fieldProps, plainTextField, switchClassNames } from "../lib/inputProps";
 import { useTimeParams } from "../hooks/useTimeParams";
+import { useCorrelate } from "../hooks/useCorrelate";
 import { api, ApiError } from "../lib/api";
 import { fmtAgo, fmtDuration } from "../lib/format";
 import { serviceNeon } from "../lib/colors";
@@ -267,6 +268,7 @@ function TraceList() {
 function TraceDetail({ traceId }: { traceId: string }) {
   const setOpenTrace = useSetAtom(openTraceIdAtom);
   const setSelectedSpan = useSetAtom(selectedSpanIdAtom);
+  const correlate = useCorrelate();
   const { data: spans, isLoading, isError } = useQuery({
     queryKey: ["trace", traceId],
     queryFn: () => api.trace(traceId),
@@ -292,6 +294,19 @@ function TraceDetail({ traceId }: { traceId: string }) {
             {spans.find((s) => !s.parent_span_id)?.name ?? spans[0].name}
           </span>
         )}
+        <Button
+          size="sm"
+          variant="flat"
+          className="shrink-0"
+          startContent={<IconAlignLeft size={14} />}
+          onPress={() =>
+            correlate.traceToLogs(traceId, {
+              atUnixNano: spans?.[0]?.start_time_unix_nano,
+            })
+          }
+        >
+          logs
+        </Button>
       </div>
       {isLoading && <SkeletonWaterfall />}
       {isError && <p className="p-4 text-sm text-danger">trace not found</p>}
