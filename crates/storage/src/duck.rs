@@ -1,16 +1,23 @@
 //! Embedded DuckDB storage (file-backed or in-memory).
 //!
-//! DuckDB is effectively single-writer, so one connection is shared behind a
-//! mutex and every call hops onto the blocking pool. Filters run in SQL;
-//! trace summarization reuses the shared Rust helper for identical semantics
-//! across backends.
+//! DuckDB is single-writer but many-reader: it is MVCC internally, so a query
+//! on its own connection runs against a consistent snapshot while a write is
+//! in flight. Writes therefore serialize on one connection, and reads go to a
+//! small pool of their own. Sharing *one* connection for both is what made the
+//! UI hang under load — every query queued behind the ingest, so a busy
+//! collector looked like a dead one.
+//!
+//! Every call hops onto the blocking pool. Filters run in SQL; trace
+//! summarization reuses the shared Rust helper for identical semantics across
+//! backends.
 
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use duckdb::types::Value as DbValue;
-use duckdb::{params_from_iter, Connection};
+use duckdb::{appender_params_from_iter, params_from_iter, Connection};
 use otelview_config::MemoryConfig;
 use otelview_model::{
     LogQuery, LogRecord, MetricInfo, MetricPoint, MetricQuery, MetricSeries, MetricType,
@@ -21,8 +28,44 @@ use crate::memory::group_series;
 use crate::summary::build_trace_summaries;
 use crate::Storage;
 
+/// How many read connections to open alongside the writer.
+///
+/// Reads are short and CPU-bound inside DuckDB, so this is about not queueing
+/// behind *each other* while the writer is busy; a handful is plenty, and each
+/// one costs a connection's worth of memory.
+const READERS: usize = 4;
+
 pub struct DuckdbStorage {
-    conn: Arc<Mutex<Connection>>,
+    /// The single writer. DuckDB permits one writing transaction at a time,
+    /// so this is a genuine mutex rather than a pool.
+    writer: Arc<Mutex<Connection>>,
+    /// Read-only connections onto the same database, handed out round-robin.
+    readers: Arc<ReaderPool>,
+}
+
+/// Round-robin over a fixed set of connections.
+///
+/// `try_lock` first so a reader that is busy is skipped rather than waited on,
+/// and only if every one of them is in use does a caller block — on the
+/// connection it would have taken anyway.
+struct ReaderPool {
+    conns: Vec<Mutex<Connection>>,
+    next: AtomicUsize,
+}
+
+impl ReaderPool {
+    fn with<T>(&self, f: impl FnOnce(&Connection) -> Result<T>) -> Result<T> {
+        let start = self.next.fetch_add(1, Ordering::Relaxed);
+        for offset in 0..self.conns.len() {
+            let slot = &self.conns[(start + offset) % self.conns.len()];
+            if let Ok(conn) = slot.try_lock() {
+                return f(&conn);
+            }
+        }
+        let slot = &self.conns[start % self.conns.len()];
+        let conn = slot.lock().unwrap();
+        f(&conn)
+    }
 }
 
 const SCHEMA: &str = r#"
@@ -87,21 +130,49 @@ impl DuckdbStorage {
             Connection::open(path).with_context(|| format!("opening DuckDB at {path}"))?
         };
         conn.execute_batch(SCHEMA).context("creating DuckDB schema")?;
-        Ok(Self { conn: Arc::new(Mutex::new(conn)) })
+
+        // `try_clone` attaches another connection to the already-open
+        // database — including an in-memory one, which is why the tests can
+        // exercise the same code path as a file.
+        let mut conns = Vec::with_capacity(READERS);
+        for _ in 0..READERS {
+            conns.push(Mutex::new(
+                conn.try_clone().context("opening a DuckDB read connection")?,
+            ));
+        }
+
+        Ok(Self {
+            writer: Arc::new(Mutex::new(conn)),
+            readers: Arc::new(ReaderPool { conns, next: AtomicUsize::new(0) }),
+        })
     }
 
-    async fn with_conn<T, F>(&self, f: F) -> Result<T>
+    /// Runs `f` on the writer, serialized against every other write.
+    async fn with_write<T, F>(&self, f: F) -> Result<T>
     where
         T: Send + 'static,
         F: FnOnce(&Connection) -> Result<T> + Send + 'static,
     {
-        let conn = Arc::clone(&self.conn);
+        let conn = Arc::clone(&self.writer);
         tokio::task::spawn_blocking(move || {
             let conn = conn.lock().unwrap();
             f(&conn)
         })
         .await
         .context("DuckDB task panicked")?
+    }
+
+    /// Runs `f` on a read connection. Never waits on the writer, so a query
+    /// still answers while an ingest is in flight.
+    async fn with_read<T, F>(&self, f: F) -> Result<T>
+    where
+        T: Send + 'static,
+        F: FnOnce(&Connection) -> Result<T> + Send + 'static,
+    {
+        let readers = Arc::clone(&self.readers);
+        tokio::task::spawn_blocking(move || readers.with(f))
+            .await
+            .context("DuckDB task panicked")?
     }
 }
 
@@ -137,12 +208,18 @@ fn parse_json(s: String) -> serde_json::Value {
 #[async_trait]
 impl Storage for DuckdbStorage {
     async fn insert_spans(&self, spans: Vec<SpanRecord>) -> Result<()> {
-        self.with_conn(move |conn| {
-            let mut stmt = conn.prepare_cached(
-                "INSERT INTO spans VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            )?;
+        if spans.is_empty() {
+            return Ok(());
+        }
+        self.with_write(move |conn| {
+            // The appender, not a prepared INSERT in a loop. Each `execute`
+            // was its own auto-commit transaction, which on a columnar store
+            // costs far more than the row is worth: a single export of a few
+            // thousand points could hold the connection for minutes. The
+            // appender batches into DuckDB's native bulk path instead.
+            let mut appender = conn.appender("spans")?;
             for s in spans {
-                stmt.execute(params_from_iter(vec![
+                appender.append_row(appender_params_from_iter(vec![
                     DbValue::Text(s.trace_id),
                     DbValue::Text(s.span_id),
                     DbValue::Text(s.parent_span_id),
@@ -163,18 +240,23 @@ impl Storage for DuckdbStorage {
                     DbValue::Text(s.scope_version),
                 ]))?;
             }
+            // Explicitly, rather than leaving it to the drop: a flush on drop
+            // discards its error, so a failed write would look like a
+            // successful one.
+            appender.flush()?;
             Ok(())
         })
         .await
     }
 
     async fn insert_logs(&self, logs: Vec<LogRecord>) -> Result<()> {
-        self.with_conn(move |conn| {
-            let mut stmt = conn.prepare_cached(
-                "INSERT INTO logs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            )?;
+        if logs.is_empty() {
+            return Ok(());
+        }
+        self.with_write(move |conn| {
+            let mut appender = conn.appender("logs")?;
             for l in logs {
-                stmt.execute(params_from_iter(vec![
+                appender.append_row(appender_params_from_iter(vec![
                     DbValue::BigInt(l.time_unix_nano as i64),
                     DbValue::BigInt(l.observed_time_unix_nano as i64),
                     DbValue::Int(l.severity_number),
@@ -188,18 +270,20 @@ impl Storage for DuckdbStorage {
                     DbValue::Text(l.scope_name),
                 ]))?;
             }
+            appender.flush()?;
             Ok(())
         })
         .await
     }
 
     async fn insert_metrics(&self, points: Vec<MetricPoint>) -> Result<()> {
-        self.with_conn(move |conn| {
-            let mut stmt = conn.prepare_cached(
-                "INSERT INTO metric_points VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            )?;
+        if points.is_empty() {
+            return Ok(());
+        }
+        self.with_write(move |conn| {
+            let mut appender = conn.appender("metric_points")?;
             for p in points {
-                stmt.execute(params_from_iter(vec![
+                appender.append_row(appender_params_from_iter(vec![
                     DbValue::Text(p.name),
                     DbValue::Text(p.description),
                     DbValue::Text(p.unit),
@@ -213,13 +297,14 @@ impl Storage for DuckdbStorage {
                     DbValue::Text(p.extra.to_string()),
                 ]))?;
             }
+            appender.flush()?;
             Ok(())
         })
         .await
     }
 
     async fn list_services(&self) -> Result<Vec<String>> {
-        self.with_conn(|conn| {
+        self.with_read(|conn| {
             let mut stmt = conn.prepare(
                 "SELECT DISTINCT service_name FROM (
                     SELECT service_name FROM spans
@@ -235,7 +320,7 @@ impl Storage for DuckdbStorage {
 
     async fn list_operations(&self, service: &str) -> Result<Vec<String>> {
         let service = service.to_string();
-        self.with_conn(move |conn| {
+        self.with_read(move |conn| {
             let mut stmt = conn.prepare(
                 "SELECT DISTINCT name FROM spans WHERE (? = '' OR service_name = ?) ORDER BY name",
             )?;
@@ -247,7 +332,7 @@ impl Storage for DuckdbStorage {
     }
 
     async fn find_traces(&self, q: TraceQuery) -> Result<Vec<TraceSummary>> {
-        self.with_conn(move |conn| {
+        self.with_read(move |conn| {
             let limit = if q.limit == 0 { 20 } else { q.limit };
             let mut sql = String::from(
                 "SELECT trace_id, max(start_time_unix_nano) AS latest FROM spans WHERE 1=1",
@@ -328,7 +413,7 @@ impl Storage for DuckdbStorage {
 
     async fn get_trace(&self, trace_id: &str) -> Result<Vec<SpanRecord>> {
         let trace_id = trace_id.to_string();
-        self.with_conn(move |conn| {
+        self.with_read(move |conn| {
             let mut stmt = conn.prepare(&format!(
                 "SELECT {SPAN_COLS} FROM spans WHERE trace_id = ? ORDER BY start_time_unix_nano"
             ))?;
@@ -341,7 +426,7 @@ impl Storage for DuckdbStorage {
     }
 
     async fn query_logs(&self, q: LogQuery) -> Result<Vec<LogRecord>> {
-        self.with_conn(move |conn| {
+        self.with_read(move |conn| {
             let limit = if q.limit == 0 { 200 } else { q.limit };
             let mut sql = String::from(
                 "SELECT time_unix_nano, observed_time_unix_nano, severity_number, severity_text, \
@@ -406,7 +491,7 @@ impl Storage for DuckdbStorage {
     }
 
     async fn list_metrics(&self) -> Result<Vec<MetricInfo>> {
-        self.with_conn(|conn| {
+        self.with_read(|conn| {
             let mut stmt = conn.prepare(
                 "SELECT name, any_value(description), any_value(unit), any_value(metric_type), \
                  list(DISTINCT service_name) FROM metric_points GROUP BY name ORDER BY name",
@@ -440,7 +525,7 @@ impl Storage for DuckdbStorage {
     }
 
     async fn query_metric_series(&self, q: MetricQuery) -> Result<Vec<MetricSeries>> {
-        self.with_conn(move |conn| {
+        self.with_read(move |conn| {
             let mut sql = String::from(
                 "SELECT service_name, attributes, time_unix_nano, value FROM metric_points \
                  WHERE name = ?",
@@ -484,7 +569,7 @@ impl Storage for DuckdbStorage {
     }
 
     async fn stats(&self) -> Result<StorageStats> {
-        self.with_conn(|conn| {
+        self.with_read(|conn| {
             let count = |sql: &str| -> Result<u64> {
                 Ok(conn.query_row(sql, [], |r| r.get::<_, i64>(0))? as u64)
             };
@@ -532,6 +617,65 @@ mod tests {
             links: json!([]),
             scope_name: String::new(),
             scope_version: String::new(),
+        }
+    }
+
+    /// A query must answer even while the writer is occupied.
+    ///
+    /// This is the regression that made a busy collector look like a dead one:
+    /// reads and writes shared a single connection, so a query queued behind
+    /// the whole ingest and the UI returned nothing until it finished.
+    ///
+    /// The write is simulated by holding the writer lock rather than by
+    /// inserting a large batch. That is deliberate: a timing test big enough
+    /// to be slow is also slow to run and flaky on a loaded machine, and after
+    /// the appender change even 40k rows land too fast to reliably overlap.
+    /// Holding the lock states the actual invariant — *a read never waits on
+    /// the writer* — and deadlocks on the old design, which the timeout turns
+    /// into a failure rather than a hang.
+    // Holding the writer guard across the await is the whole point here: it
+    // is what an in-flight ingest does.
+    #[allow(clippy::await_holding_lock)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn a_read_does_not_wait_for_the_writer() {
+        use std::time::Duration;
+
+        let store = DuckdbStorage::open(":memory:").unwrap();
+        store.insert_spans(vec![span("t-seed", "seed", "svc-seed", 10, 0)]).await.unwrap();
+
+        // Stands in for an ingest that is mid-flight.
+        let held = store.writer.lock().unwrap();
+
+        let services = tokio::time::timeout(Duration::from_secs(5), store.list_services())
+            .await
+            .expect("a read queued behind the writer and never returned")
+            .unwrap();
+        assert_eq!(services, vec!["svc-seed"]);
+
+        drop(held);
+    }
+
+    /// The pool has a finite number of connections, so concurrent readers must
+    /// not deadlock or starve when there are more of them than connections.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn concurrent_reads_exceed_the_pool_without_stalling() {
+        use std::time::Duration;
+
+        let store = Arc::new(DuckdbStorage::open(":memory:").unwrap());
+        store.insert_spans(vec![span("t-seed", "seed", "svc-seed", 10, 0)]).await.unwrap();
+
+        let reads = (0..READERS * 4).map(|_| {
+            let store = Arc::clone(&store);
+            tokio::spawn(async move { store.list_services().await })
+        });
+
+        for read in reads {
+            let services = tokio::time::timeout(Duration::from_secs(5), read)
+                .await
+                .expect("a reader stalled")
+                .unwrap()
+                .unwrap();
+            assert_eq!(services, vec!["svc-seed"]);
         }
     }
 
