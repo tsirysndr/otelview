@@ -4,7 +4,7 @@
 
 ![otelview](https://raw.githubusercontent.com/tsirysndr/otelview/main/.github/assets/preview.png)
 
-An alternative to Datadog, Kibana, CloudWatch and SigNoz you can run anywhere. This package downloads the pre-built `otelview` binary for your platform from [GitHub releases](https://github.com/tsirysndr/otelview/releases) — the binary embeds the OTLP receivers, the storage engine (DuckDB, statically linked) and the web UI. No cluster, no JVM, no SaaS bill.
+The simplest way to inspect OpenTelemetry data on your own infrastructure. This package downloads the pre-built `otelview` binary for your platform from [GitHub releases](https://github.com/tsirysndr/otelview/releases) — the binary embeds the OTLP receivers, the storage engine (DuckDB, statically linked) and the web UI. No cluster, no JVM, no SaaS bill.
 
 ## Install
 
