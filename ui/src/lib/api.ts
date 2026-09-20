@@ -81,6 +81,22 @@ export interface ServiceGraph {
   sampled_traces: number;
 }
 
+export interface Exemplar {
+  trace_id: string;
+  span_id: string;
+  time_unix_nano: number;
+  value: number;
+}
+
+/** A metric that carried an exemplar pointing at a span. */
+export interface ExemplarHit {
+  metric_name: string;
+  service_name: string;
+  metric_type: string;
+  unit: string;
+  exemplar: Exemplar;
+}
+
 export interface FieldInfo {
   name: string;
   count: number;
@@ -203,4 +219,6 @@ export const api = {
     request<FieldInfo[]>("/api/logs/fields", p),
   traceFields: (p: Record<string, unknown>) =>
     request<FieldInfo[]>("/api/traces/fields", p),
+  metricExemplars: (p: { trace_id: string; span_id?: string; limit?: number }) =>
+    request<ExemplarHit[]>("/api/metrics/exemplars", { ...p }),
 };

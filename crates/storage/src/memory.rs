@@ -7,11 +7,11 @@ use anyhow::Result;
 use async_trait::async_trait;
 use otelview_config::MemoryConfig;
 use otelview_model::{
-    LogQuery, LogRecord, MetricInfo, MetricPoint, MetricQuery, MetricSeries, SeriesPoint,
-    SpanRecord, StorageStats, TraceQuery, TraceSummary,
+    ExemplarHit, LogQuery, LogRecord, MetricInfo, MetricPoint, MetricQuery, MetricSeries,
+    SeriesPoint, SpanRecord, StorageStats, TraceQuery, TraceSummary,
 };
 
-use crate::summary::{build_trace_summaries, span_matches};
+use crate::summary::{build_trace_summaries, collect_exemplar_hits, span_matches};
 use crate::Storage;
 
 pub struct MemoryStorage {
@@ -188,6 +188,21 @@ impl Storage for MemoryStorage {
             })
             .collect();
         Ok(group_series(points, q.max_points))
+    }
+
+    async fn find_exemplars(
+        &self,
+        trace_id: &str,
+        span_id: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<ExemplarHit>> {
+        let inner = self.inner.read().unwrap();
+        Ok(collect_exemplar_hits(
+            inner.metrics.iter(),
+            trace_id,
+            span_id,
+            limit,
+        ))
     }
 
     async fn stats(&self) -> Result<StorageStats> {

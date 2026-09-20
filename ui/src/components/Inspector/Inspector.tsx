@@ -39,9 +39,12 @@ function SpanDetails({ span }: { span: SpanRecord }) {
   const links = useSignalLinks({
     traceId: span.trace_id,
     spanId: span.span_id,
-    service: span.service_name,
   });
-  const anyLink = links.hasSpanLogs || links.hasTraceLogs || links.hasServiceMetrics;
+  // An exemplar on this span is a real link to a metric; one elsewhere in
+  // the trace still beats guessing by service, so it is offered as such.
+  const exemplar = links.spanExemplars[0] ?? links.traceExemplars[0];
+  const exemplarIsForThisSpan = links.spanExemplars.length > 0;
+  const anyLink = links.hasSpanLogs || links.hasTraceLogs || !!exemplar;
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-3">
       <div>
@@ -77,8 +80,10 @@ function SpanDetails({ span }: { span: SpanRecord }) {
         )}
       </dl>
 
-      {/* The three signals meet at this span — but only the jumps that lead
-          somewhere are offered, so none of them is a dead end. */}
+      {/* Only the jumps that lead somewhere are offered, so none of them is
+          a dead end. Metrics appear only when an exemplar genuinely points
+          here — matching by service and time window would imply a link to
+          this span that the data does not support. */}
       {anyLink && (
         <div className="flex flex-wrap gap-1.5">
           {links.hasSpanLogs && (
@@ -110,18 +115,25 @@ function SpanDetails({ span }: { span: SpanRecord }) {
               {links.hasSpanLogs ? "whole trace" : "logs for this trace"}
             </Button>
           )}
-          {links.hasServiceMetrics && (
+          {exemplar && (
             <Button
               size="sm"
               variant="flat"
               startContent={<IconChartLine size={14} />}
+              title={
+                exemplarIsForThisSpan
+                  ? `${exemplar.metric_name} recorded an exemplar for this span`
+                  : `${exemplar.metric_name} recorded an exemplar elsewhere in this trace`
+              }
               onPress={() =>
-                correlate.serviceToMetrics(span.service_name, {
-                  atUnixNano: span.start_time_unix_nano,
+                correlate.exemplarToMetric(exemplar.metric_name, {
+                  service: exemplar.service_name,
+                  atUnixNano: exemplar.exemplar.time_unix_nano,
                 })
               }
             >
-              {span.service_name} metrics
+              {exemplar.metric_name}
+              {!exemplarIsForThisSpan && " (trace)"}
             </Button>
           )}
         </div>
@@ -190,10 +202,6 @@ function SpanDetails({ span }: { span: SpanRecord }) {
 function LogDetails() {
   const log = useAtomValue(selectedLogAtom);
   const correlate = useCorrelate();
-  const links = useSignalLinks({
-    traceId: log?.trace_id,
-    service: log?.service_name,
-  });
   if (!log) return null;
   const sev = severityInfo(log.severity_number, log.severity_text);
   const hasTrace = hasTraceId(log.trace_id);
@@ -213,7 +221,7 @@ function LogDetails() {
         {typeof log.body === "string" ? log.body : JSON.stringify(log.body, null, 2)}
       </pre>
 
-      {(hasTrace || links.hasServiceMetrics) && (
+      {hasTrace && (
       <div className="flex flex-wrap gap-1.5">
         {hasTrace && (
           <Button
@@ -229,20 +237,6 @@ function LogDetails() {
             }
           >
             open trace {log.trace_id.slice(0, 12)}…
-          </Button>
-        )}
-        {links.hasServiceMetrics && (
-          <Button
-            size="sm"
-            variant="flat"
-            startContent={<IconChartLine size={14} />}
-            onPress={() =>
-              correlate.serviceToMetrics(log.service_name, {
-                atUnixNano: log.time_unix_nano,
-              })
-            }
-          >
-            {log.service_name} metrics
           </Button>
         )}
       </div>

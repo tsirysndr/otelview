@@ -63,6 +63,7 @@ pub fn router(cfg: &Config, storage: DynStorage) -> Router {
         .route("/logs", get(logs))
         .route("/metrics", get(metrics))
         .route("/metrics/series", get(metric_series))
+        .route("/metrics/exemplars", get(metric_exemplars))
         .route("/stats", get(stats))
         .route("/services/stats", get(service_stats_handler))
         .route("/service-graph", get(service_graph_handler))
@@ -261,6 +262,32 @@ async fn trace_detail(State(state): State<ApiState>, Path(trace_id): Path<String
             (StatusCode::NOT_FOUND, format!("trace {trace_id} not found")).into_response()
         }
         Ok(spans) => Json(spans).into_response(),
+        Err(e) => internal(e),
+    }
+}
+
+#[derive(Deserialize)]
+struct ExemplarParams {
+    trace_id: String,
+    /// Narrow to one span within the trace.
+    span_id: Option<String>,
+    limit: Option<usize>,
+}
+
+/// Metrics carrying an exemplar that points at a trace or span — the only
+/// link between a metric and a trace that the data actually supports.
+async fn metric_exemplars(
+    State(state): State<ApiState>,
+    Query(p): Query<ExemplarParams>,
+) -> Response {
+    let trace_id = p.trace_id.trim();
+    if trace_id.is_empty() || trace_id.chars().all(|c| c == '0') {
+        return Json(Vec::<otelview_model::ExemplarHit>::new()).into_response();
+    }
+    let span_id = p.span_id.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    let limit = p.limit.unwrap_or(50).clamp(1, 500);
+    match state.storage.find_exemplars(trace_id, span_id, limit).await {
+        Ok(hits) => Json(hits).into_response(),
         Err(e) => internal(e),
     }
 }
@@ -992,6 +1019,70 @@ mod tests {
         for (i, b) in buckets.iter().enumerate() {
             assert_eq!(b["info"].as_u64().unwrap(), 600, "bucket {i} is uneven");
         }
+    }
+
+    #[tokio::test]
+    async fn exemplars_link_metrics_to_a_trace() {
+        use otelview_model::{MetricPoint, MetricType};
+        let (cfg, storage) = test_state();
+        let mk = |name: &str, trace: &str, span: &str| MetricPoint {
+            name: name.into(),
+            description: String::new(),
+            unit: "ms".into(),
+            metric_type: MetricType::Histogram,
+            service_name: "checkout".into(),
+            time_unix_nano: 5_000,
+            value: 1.0,
+            count: 1,
+            attributes: json!({}),
+            resource_attributes: json!({}),
+            extra: json!({
+                "exemplars": [
+                    {"trace_id": trace, "span_id": span, "time_unix_nano": 5_000, "value": 12.5}
+                ]
+            }),
+        };
+        let mut plain = mk("no.exemplars", "", "");
+        plain.extra = json!({});
+        storage
+            .insert_metrics(vec![
+                mk("http.server.duration", "aaa111", "s1"),
+                mk("db.client.duration", "aaa111", "s2"),
+                mk("other.metric", "bbb222", "s9"),
+                plain,
+            ])
+            .await
+            .unwrap();
+        let app = router(&cfg, storage);
+
+        // Both metrics that reference the trace come back.
+        let (status, v) = get_json(app.clone(), "/api/metrics/exemplars?trace_id=aaa111").await;
+        assert_eq!(status, StatusCode::OK);
+        let names: Vec<&str> = v
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|h| h["metric_name"].as_str().unwrap())
+            .collect();
+        assert_eq!(names.len(), 2);
+        assert!(names.contains(&"http.server.duration"));
+        assert!(names.contains(&"db.client.duration"));
+        assert_eq!(v[0]["exemplar"]["value"], 12.5);
+
+        // Narrowing to a span keeps only that span's metric.
+        let (_, v) =
+            get_json(app.clone(), "/api/metrics/exemplars?trace_id=aaa111&span_id=s2").await;
+        assert_eq!(v.as_array().unwrap().len(), 1);
+        assert_eq!(v[0]["metric_name"], "db.client.duration");
+
+        // A trace nothing points at is empty, not an error.
+        let (status, v) = get_json(app.clone(), "/api/metrics/exemplars?trace_id=nope").await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(v.as_array().unwrap().is_empty());
+
+        // An all-zero trace id links nothing.
+        let (_, v) = get_json(app, "/api/metrics/exemplars?trace_id=0000000000000000").await;
+        assert!(v.as_array().unwrap().is_empty());
     }
 
     #[tokio::test]

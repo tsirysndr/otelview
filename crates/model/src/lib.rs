@@ -130,7 +130,28 @@ pub struct MetricPoint {
     pub attributes: Value,
     pub resource_attributes: Value,
     /// Type-specific extras: histogram buckets, quantiles, monotonic/temporality flags.
+    /// Also carries `exemplars` when the producer sent any.
     pub extra: Value,
+}
+
+impl MetricPoint {
+    /// Exemplars recorded on this point. Stored inside `extra` rather than
+    /// as a column so that adding them needed no migration of existing
+    /// metric tables.
+    pub fn exemplars(&self) -> Vec<Exemplar> {
+        self.extra
+            .get("exemplars")
+            .and_then(|v| serde_json::from_value::<Vec<Exemplar>>(v.clone()).ok())
+            .unwrap_or_default()
+    }
+
+    /// True when any exemplar points at this trace (and span, if given).
+    pub fn links_to(&self, trace_id: &str, span_id: Option<&str>) -> bool {
+        self.exemplars().iter().any(|e| {
+            e.trace_id.eq_ignore_ascii_case(trace_id)
+                && span_id.is_none_or(|s| e.span_id.eq_ignore_ascii_case(s))
+        })
+    }
 }
 
 /// Summary of one trace for list views.
@@ -185,6 +206,31 @@ pub struct MetricInfo {
     pub unit: String,
     pub metric_type: MetricType,
     pub services: Vec<String>,
+}
+
+/// A sample measurement a metric carried, pointing back at the span that
+/// produced it. This is the only thing that genuinely links a metric to a
+/// trace — without one, a metric can be matched to a service and a time
+/// window and nothing more.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Exemplar {
+    #[serde(default)]
+    pub trace_id: String,
+    #[serde(default)]
+    pub span_id: String,
+    pub time_unix_nano: u64,
+    pub value: f64,
+}
+
+/// An exemplar together with the metric it was attached to.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExemplarHit {
+    pub metric_name: String,
+    pub service_name: String,
+    pub metric_type: MetricType,
+    #[serde(default)]
+    pub unit: String,
+    pub exemplar: Exemplar,
 }
 
 /// Query for metric series.

@@ -20,12 +20,12 @@ use duckdb::types::Value as DbValue;
 use duckdb::{appender_params_from_iter, params_from_iter, Connection};
 use otelview_config::MemoryConfig;
 use otelview_model::{
-    LogQuery, LogRecord, MetricInfo, MetricPoint, MetricQuery, MetricSeries, MetricType,
-    SpanRecord, StorageStats, TraceQuery, TraceSummary,
+    ExemplarHit, LogQuery, LogRecord, MetricInfo, MetricPoint, MetricQuery, MetricSeries,
+    MetricType, SpanRecord, StorageStats, TraceQuery, TraceSummary,
 };
 
 use crate::memory::group_series;
-use crate::summary::build_trace_summaries;
+use crate::summary::{build_trace_summaries, collect_exemplar_hits};
 use crate::Storage;
 
 /// How many read connections to open alongside the writer.
@@ -186,6 +186,22 @@ impl DuckdbStorage {
             .await
             .context("DuckDB task panicked")?
     }
+}
+
+fn row_to_metric(row: &duckdb::Row<'_>) -> duckdb::Result<MetricPoint> {
+    Ok(MetricPoint {
+        name: row.get(0)?,
+        description: row.get(1)?,
+        unit: row.get(2)?,
+        metric_type: MetricType::parse(&row.get::<_, String>(3)?).unwrap_or(MetricType::Gauge),
+        service_name: row.get(4)?,
+        time_unix_nano: row.get::<_, i64>(5)? as u64,
+        value: row.get(6)?,
+        count: row.get::<_, i64>(7)? as u64,
+        attributes: parse_json(row.get::<_, String>(8)?),
+        resource_attributes: parse_json(row.get::<_, String>(9)?),
+        extra: parse_json(row.get::<_, String>(10)?),
+    })
 }
 
 fn row_to_span(row: &duckdb::Row<'_>) -> duckdb::Result<SpanRecord> {
@@ -539,6 +555,35 @@ impl Storage for DuckdbStorage {
         .await
     }
 
+    async fn find_exemplars(
+        &self,
+        trace_id: &str,
+        span_id: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<ExemplarHit>> {
+        let trace_id = trace_id.to_string();
+        let span_id = span_id.map(str::to_string);
+        self.with_read(move |conn| {
+            // Exemplars live inside the `extra` JSON, so there is no index to
+            // use. A LIKE on the hex trace id narrows the scan to a handful of
+            // rows before the JSON is parsed — without it this would walk
+            // every metric point in the table.
+            let mut stmt = conn.prepare(
+                "SELECT name, description, unit, metric_type, service_name,                         time_unix_nano, value, count, attributes, resource_attributes, extra                  FROM metric_points                  WHERE extra LIKE '%' || ? || '%'                  ORDER BY time_unix_nano DESC LIMIT 2000",
+            )?;
+            let points: Vec<MetricPoint> = stmt
+                .query_map(params_from_iter([trace_id.as_str()]), row_to_metric)?
+                .collect::<duckdb::Result<_>>()?;
+            Ok(collect_exemplar_hits(
+                points.iter(),
+                &trace_id,
+                span_id.as_deref(),
+                limit,
+            ))
+        })
+        .await
+    }
+
     async fn query_metric_series(&self, q: MetricQuery) -> Result<Vec<MetricSeries>> {
         self.with_read(move |conn| {
             let mut sql = String::from(
@@ -629,6 +674,63 @@ fn _unused(_c: &MemoryConfig) {}
 
 #[cfg(test)]
 mod tests {
+    #[tokio::test]
+    async fn exemplars_round_trip_through_duckdb() {
+        use otelview_model::{MetricPoint, MetricType};
+        use serde_json::json;
+        let s = super::DuckdbStorage::open(":memory:").unwrap();
+        let mk = |name: &str, trace: &str, span: &str| MetricPoint {
+            name: name.into(),
+            description: String::new(),
+            unit: "ms".into(),
+            metric_type: MetricType::Histogram,
+            service_name: "checkout".into(),
+            time_unix_nano: 10,
+            value: 2.0,
+            count: 1,
+            attributes: json!({}),
+            resource_attributes: json!({}),
+            extra: json!({
+                "explicit_bounds": [1, 5],
+                "exemplars": [
+                    {"trace_id": trace, "span_id": span, "time_unix_nano": 10, "value": 9.5}
+                ]
+            }),
+        };
+        let mut plain = mk("plain", "", "");
+        plain.extra = json!({});
+        super::Storage::insert_metrics(
+            &s,
+            vec![
+                mk("http.server.duration", "abc123", "s1"),
+                mk("db.client.duration", "abc123", "s2"),
+                mk("elsewhere", "zzz999", "s3"),
+                plain,
+            ],
+        )
+        .await
+        .unwrap();
+
+        let hits = super::Storage::find_exemplars(&s, "abc123", None, 50)
+            .await
+            .unwrap();
+        assert_eq!(hits.len(), 2, "both metrics referencing the trace");
+        assert_eq!(hits[0].exemplar.value, 9.5);
+        assert_eq!(hits[0].service_name, "checkout");
+        assert_eq!(hits[0].unit, "ms");
+
+        let one = super::Storage::find_exemplars(&s, "abc123", Some("s2"), 50)
+            .await
+            .unwrap();
+        assert_eq!(one.len(), 1);
+        assert_eq!(one[0].metric_name, "db.client.duration");
+
+        assert!(super::Storage::find_exemplars(&s, "nothing", None, 50)
+            .await
+            .unwrap()
+            .is_empty());
+    }
+
     use super::*;
     use serde_json::json;
 

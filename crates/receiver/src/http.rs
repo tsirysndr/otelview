@@ -119,6 +119,65 @@ fn success(payload: &Payload) -> Response {
     }
 }
 
+/// Reshape OTLP/JSON into the subset opentelemetry-proto's serde accepts.
+///
+/// The generated deserializers diverge from the OTLP/JSON spec in ways that
+/// fail *silently*: a data point's `data` is a flattened oneof, so a single
+/// unparseable field makes the whole oneof deserialize to `None` and the
+/// metric disappears rather than erroring.
+///
+/// 1. `asInt` is spec'd as a *string* (JSON cannot hold int64 exactly), but
+///    only a JSON number is accepted — so every integer counter sent as
+///    OTLP/JSON was silently stored as zero.
+/// 2. An exemplar's value must be nested under `value`, where the spec
+///    flattens it onto the exemplar as `asDouble`/`asInt`.
+/// 3. Exemplars need `filteredAttributes`, `traceId` and `spanId` present,
+///    which senders may legitimately omit when empty — and omitting them
+///    took the entire metric down with them.
+fn normalize_otlp_json(v: &mut serde_json::Value) {
+    use serde_json::{Map, Value};
+    match v {
+        Value::Array(items) => items.iter_mut().for_each(normalize_otlp_json),
+        Value::Object(map) => {
+            if let Some(Value::String(s)) = map.get("asInt") {
+                if let Ok(n) = s.parse::<i64>() {
+                    map.insert("asInt".into(), Value::Number(n.into()));
+                }
+            }
+            if let Some(Value::Array(exemplars)) = map.get_mut("exemplars") {
+                for e in exemplars.iter_mut() {
+                    let Some(obj) = e.as_object_mut() else { continue };
+                    obj.entry("filteredAttributes")
+                        .or_insert_with(|| Value::Array(Vec::new()));
+                    obj.entry("traceId")
+                        .or_insert_with(|| Value::String(String::new()));
+                    obj.entry("spanId")
+                        .or_insert_with(|| Value::String(String::new()));
+                    if !obj.contains_key("value") {
+                        let flat = ["asDouble", "asInt"]
+                            .iter()
+                            .find_map(|k| obj.remove(*k).map(|val| ((*k).to_string(), val)));
+                        if let Some((k, val)) = flat {
+                            let val = match (&k[..], &val) {
+                                ("asInt", Value::String(s)) => s
+                                    .parse::<i64>()
+                                    .map(|n| Value::Number(n.into()))
+                                    .unwrap_or(val),
+                                _ => val,
+                            };
+                            let mut nested = Map::new();
+                            nested.insert(k, val);
+                            obj.insert("value".into(), Value::Object(nested));
+                        }
+                    }
+                }
+            }
+            map.values_mut().for_each(normalize_otlp_json);
+        }
+        _ => {}
+    }
+}
+
 #[allow(clippy::result_large_err)]
 fn parse<T: Message + Default + serde::de::DeserializeOwned>(
     payload: &Payload,
@@ -128,7 +187,10 @@ fn parse<T: Message + Default + serde::de::DeserializeOwned>(
             T::decode(b.as_ref()).map_err(|e| bad_request(format!("invalid protobuf: {e}")))
         }
         Payload::Json(b) => {
-            serde_json::from_slice(b).map_err(|e| bad_request(format!("invalid OTLP JSON: {e}")))
+            let mut v: serde_json::Value = serde_json::from_slice(b)
+                .map_err(|e| bad_request(format!("invalid OTLP JSON: {e}")))?;
+            normalize_otlp_json(&mut v);
+            serde_json::from_value(v).map_err(|e| bad_request(format!("invalid OTLP JSON: {e}")))
         }
     }
 }
@@ -207,6 +269,74 @@ async fn ingest_metrics(
 
 #[cfg(test)]
 mod tests {
+    use opentelemetry_proto::tonic::collector::metrics::v1::ExportMetricsServiceRequest;
+    use opentelemetry_proto::tonic::metrics::v1::metric::Data;
+
+    fn metrics_from_json(js: &'static str) -> ExportMetricsServiceRequest {
+        super::parse(&super::Payload::Json(bytes::Bytes::from_static(js.as_bytes()))).unwrap()
+    }
+
+    /// OTLP/JSON sends int64 as a string. Accepting only numbers meant every
+    /// integer counter was silently ingested as zero.
+    #[test]
+    fn json_int_counters_are_not_silently_zero() {
+        let req = metrics_from_json(
+            r#"{"resourceMetrics":[{"resource":{"attributes":[]},"scopeMetrics":[{"scope":{},
+              "metrics":[{"name":"http.server.requests","unit":"1","sum":{
+                "aggregationTemporality":2,"isMonotonic":true,
+                "dataPoints":[{"timeUnixNano":"7","asInt":"1234"}]}}]}]}]}"#,
+        );
+        let s = match &req.resource_metrics[0].scope_metrics[0].metrics[0].data {
+            Some(Data::Sum(s)) => s,
+            other => panic!("the metric was dropped entirely: {other:?}"),
+        };
+        use opentelemetry_proto::tonic::metrics::v1::number_data_point::Value as NV;
+        assert_eq!(s.data_points[0].value, Some(NV::AsInt(1234)));
+    }
+
+    /// Exemplars carry the only real metric->trace link; the spec flattens
+    /// their value and lets empty fields be omitted.
+    #[test]
+    fn json_exemplars_survive_spec_shaped_payloads() {
+        let req = metrics_from_json(
+            r#"{"resourceMetrics":[{"resource":{"attributes":[]},"scopeMetrics":[{"scope":{},
+              "metrics":[{"name":"http.server.duration","unit":"ms","histogram":{
+                "aggregationTemporality":2,"dataPoints":[{"timeUnixNano":"7","count":"3","sum":1.0,
+                "bucketCounts":["1","2"],"explicitBounds":[10],
+                "exemplars":[{"timeUnixNano":"7","asDouble":4.5,
+                  "traceId":"aabbccddeeff00112233445566778899",
+                  "spanId":"0011223344556677"}]}]}}]}]}]}"#,
+        );
+        let h = match &req.resource_metrics[0].scope_metrics[0].metrics[0].data {
+            Some(Data::Histogram(h)) => h,
+            other => panic!("the metric was dropped entirely: {other:?}"),
+        };
+        let ex = &h.data_points[0].exemplars;
+        assert_eq!(ex.len(), 1);
+        use opentelemetry_proto::tonic::metrics::v1::exemplar::Value as EV;
+        assert_eq!(ex[0].value, Some(EV::AsDouble(4.5)));
+        assert_eq!(hex::encode(&ex[0].trace_id), "aabbccddeeff00112233445566778899");
+        assert_eq!(hex::encode(&ex[0].span_id), "0011223344556677");
+    }
+
+    /// An exemplar with an int value, and with the optional fields omitted.
+    #[test]
+    fn json_exemplar_with_int_value_and_no_ids() {
+        let req = metrics_from_json(
+            r#"{"resourceMetrics":[{"resource":{"attributes":[]},"scopeMetrics":[{"scope":{},
+              "metrics":[{"name":"m","unit":"1","gauge":{
+                "dataPoints":[{"timeUnixNano":"7","asDouble":1.0,
+                "exemplars":[{"timeUnixNano":"7","asInt":"99"}]}]}}]}]}]}"#,
+        );
+        let g = match &req.resource_metrics[0].scope_metrics[0].metrics[0].data {
+            Some(Data::Gauge(g)) => g,
+            other => panic!("the metric was dropped entirely: {other:?}"),
+        };
+        use opentelemetry_proto::tonic::metrics::v1::exemplar::Value as EV;
+        assert_eq!(g.data_points[0].exemplars[0].value, Some(EV::AsInt(99)));
+    }
+
+
     use super::*;
     use axum::body::Body;
     use axum::http::Request;

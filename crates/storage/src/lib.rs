@@ -12,8 +12,8 @@ use anyhow::Result;
 use async_trait::async_trait;
 use otelview_config::{Backend, FallbackBackend, StorageConfig};
 use otelview_model::{
-    LogQuery, LogRecord, MetricInfo, MetricPoint, MetricQuery, MetricSeries, SpanRecord,
-    StorageStats, TraceQuery, TraceSummary,
+    ExemplarHit, LogQuery, LogRecord, MetricInfo, MetricPoint, MetricQuery, MetricSeries,
+    SpanRecord, StorageStats, TraceQuery, TraceSummary,
 };
 
 pub mod duck;
@@ -61,6 +61,22 @@ pub trait Storage: Send + Sync + 'static {
     async fn list_metrics(&self) -> Result<Vec<MetricInfo>>;
     async fn query_metric_series(&self, q: MetricQuery) -> Result<Vec<MetricSeries>>;
     async fn stats(&self) -> Result<StorageStats>;
+
+    /// Metrics carrying an exemplar that points at `trace_id` (and `span_id`
+    /// when given). This is the only honest metrics<->trace join: without an
+    /// exemplar a metric relates to a service and a window, not to a span.
+    ///
+    /// Defaults to empty, like `sweep_expired`: the jaeger and remote
+    /// backends have no metric storage of their own to search.
+    async fn find_exemplars(
+        &self,
+        trace_id: &str,
+        span_id: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<ExemplarHit>> {
+        let _ = (trace_id, span_id, limit);
+        Ok(Vec::new())
+    }
 
     /// Delete every span, log and metric point older than `cutoff_unix_nano`,
     /// returning (spans, logs, metric_points) deleted — or `None` when this

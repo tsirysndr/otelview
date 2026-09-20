@@ -533,6 +533,50 @@ fn number_value(v: Option<&number_data_point::Value>) -> f64 {
     }
 }
 
+/// OTLP exemplars for one data point, as the JSON we persist in `extra`.
+/// Returns `None` when the producer sent none, so `extra` stays unchanged
+/// for the overwhelmingly common case.
+fn exemplars_json(
+    exemplars: &[opentelemetry_proto::tonic::metrics::v1::Exemplar],
+) -> Option<Value> {
+    use opentelemetry_proto::tonic::metrics::v1::exemplar;
+    let out: Vec<Value> = exemplars
+        .iter()
+        // An exemplar with no trace id cannot link anything, so it is not
+        // worth storing.
+        .filter(|e| !e.trace_id.is_empty())
+        .map(|e| {
+            json!({
+                "trace_id": hex::encode(&e.trace_id),
+                "span_id": hex::encode(&e.span_id),
+                "time_unix_nano": e.time_unix_nano,
+                "value": match e.value {
+                    Some(exemplar::Value::AsDouble(d)) => d,
+                    Some(exemplar::Value::AsInt(i)) => i as f64,
+                    None => 0.0,
+                },
+            })
+        })
+        .collect();
+    (!out.is_empty()).then(|| Value::Array(out))
+}
+
+/// Attach exemplars to a point's `extra`, preserving whatever the metric
+/// type already put there.
+fn attach_exemplars(
+    p: &mut MetricPoint,
+    exemplars: &[opentelemetry_proto::tonic::metrics::v1::Exemplar],
+) {
+    if let Some(ex) = exemplars_json(exemplars) {
+        match p.extra.as_object_mut() {
+            Some(obj) => {
+                obj.insert("exemplars".into(), ex);
+            }
+            None => p.extra = json!({ "exemplars": ex }),
+        }
+    }
+}
+
 fn convert_metric(
     m: &opentelemetry_proto::tonic::metrics::v1::Metric,
     service: &str,
@@ -557,6 +601,7 @@ fn convert_metric(
             for dp in &g.data_points {
                 let mut p = base(MetricType::Gauge, dp.time_unix_nano, &dp.attributes);
                 p.value = number_value(dp.value.as_ref());
+                attach_exemplars(&mut p, &dp.exemplars);
                 out.push(p);
             }
         }
@@ -568,6 +613,7 @@ fn convert_metric(
                     "is_monotonic": s.is_monotonic,
                     "temporality": s.aggregation_temporality,
                 });
+                attach_exemplars(&mut p, &dp.exemplars);
                 out.push(p);
             }
         }
@@ -583,6 +629,7 @@ fn convert_metric(
                     "max": dp.max,
                     "temporality": h.aggregation_temporality,
                 });
+                attach_exemplars(&mut p, &dp.exemplars);
                 out.push(p);
             }
         }
@@ -601,6 +648,7 @@ fn convert_metric(
                     "min": dp.min,
                     "max": dp.max,
                 });
+                attach_exemplars(&mut p, &dp.exemplars);
                 out.push(p);
             }
         }
@@ -624,6 +672,76 @@ fn convert_metric(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn exemplars_survive_ingest_and_keep_type_extras() {
+        use opentelemetry_proto::tonic::common::v1::InstrumentationScope;
+        use opentelemetry_proto::tonic::metrics::v1::{
+            exemplar, Exemplar, Metric, NumberDataPoint, ResourceMetrics, ScopeMetrics, Sum,
+        };
+        let ex = |trace: &str, span: &str| Exemplar {
+            filtered_attributes: vec![],
+            time_unix_nano: 7,
+            span_id: hex::decode(span).unwrap(),
+            trace_id: hex::decode(trace).unwrap(),
+            value: Some(exemplar::Value::AsDouble(4.5)),
+        };
+        let rm = ResourceMetrics {
+            resource: None,
+            scope_metrics: vec![ScopeMetrics {
+                scope: Some(InstrumentationScope::default()),
+                metrics: vec![Metric {
+                    name: "http.server.duration".into(),
+                    description: String::new(),
+                    unit: "ms".into(),
+                    metadata: vec![],
+                    data: Some(super::metric::Data::Sum(Sum {
+                        is_monotonic: true,
+                        aggregation_temporality: 2,
+                        data_points: vec![NumberDataPoint {
+                            attributes: vec![],
+                            start_time_unix_nano: 0,
+                            time_unix_nano: 7,
+                            exemplars: vec![
+                                ex("aabbccddeeff00112233445566778899", "0011223344556677"),
+                                // no trace id: cannot link anything, dropped
+                                Exemplar {
+                                    filtered_attributes: vec![],
+                                    time_unix_nano: 7,
+                                    span_id: vec![],
+                                    trace_id: vec![],
+                                    value: None,
+                                },
+                            ],
+                            flags: 0,
+                            value: Some(super::number_data_point::Value::AsDouble(1.0)),
+                        }],
+                    })),
+                }],
+                schema_url: String::new(),
+            }],
+            schema_url: String::new(),
+        };
+
+        let points = super::metrics_from_resource_metrics(&[rm]);
+        assert_eq!(points.len(), 1);
+        let p = &points[0];
+
+        // The Sum's own extras are still there alongside the exemplars.
+        assert_eq!(p.extra["is_monotonic"], true);
+        assert_eq!(p.extra["temporality"], 2);
+
+        let exemplars = p.exemplars();
+        assert_eq!(exemplars.len(), 1, "the trace-less exemplar is dropped");
+        assert_eq!(exemplars[0].trace_id, "aabbccddeeff00112233445566778899");
+        assert_eq!(exemplars[0].span_id, "0011223344556677");
+        assert_eq!(exemplars[0].value, 4.5);
+
+        assert!(p.links_to("aabbccddeeff00112233445566778899", None));
+        assert!(p.links_to("AABBCCDDEEFF00112233445566778899", Some("0011223344556677")));
+        assert!(!p.links_to("aabbccddeeff00112233445566778899", Some("nope")));
+        assert!(!p.links_to("different", None));
+    }
+
     use super::*;
     use opentelemetry_proto::tonic::common::v1::InstrumentationScope;
 

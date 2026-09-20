@@ -4,6 +4,42 @@ use otelview_model::{SpanRecord, TraceSummary};
 use std::collections::BTreeMap;
 
 /// Group spans by trace id and build one summary per trace, newest first.
+/// Exemplar hits for a trace, newest first, from any iterator of metric
+/// points. Shared so the memory and duckdb backends agree on what counts as
+/// a match and on the ordering.
+pub fn collect_exemplar_hits<'a>(
+    points: impl Iterator<Item = &'a otelview_model::MetricPoint>,
+    trace_id: &str,
+    span_id: Option<&str>,
+    limit: usize,
+) -> Vec<otelview_model::ExemplarHit> {
+    let mut hits: Vec<otelview_model::ExemplarHit> = Vec::new();
+    for p in points {
+        for e in p.exemplars() {
+            if !e.trace_id.eq_ignore_ascii_case(trace_id) {
+                continue;
+            }
+            if let Some(s) = span_id {
+                if !e.span_id.eq_ignore_ascii_case(s) {
+                    continue;
+                }
+            }
+            hits.push(otelview_model::ExemplarHit {
+                metric_name: p.name.clone(),
+                service_name: p.service_name.clone(),
+                metric_type: p.metric_type,
+                unit: p.unit.clone(),
+                exemplar: e,
+            });
+        }
+    }
+    hits.sort_by(|a, b| b.exemplar.time_unix_nano.cmp(&a.exemplar.time_unix_nano));
+    if limit > 0 {
+        hits.truncate(limit);
+    }
+    hits
+}
+
 pub fn build_trace_summaries(spans: &[SpanRecord]) -> Vec<TraceSummary> {
     let mut by_trace: BTreeMap<&str, Vec<&SpanRecord>> = BTreeMap::new();
     for s in spans {

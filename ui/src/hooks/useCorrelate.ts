@@ -19,9 +19,11 @@ const CONTEXT_MS = 15 * 60 * 1000;
 
 /** Jumping between signals.
  *
- * The join keys available are narrow: `trace_id` links traces and logs,
- * `service` links all three, and metrics have no exemplars, so metrics can
- * only ever be correlated by service plus a time window.
+ * The join keys are narrow: `trace_id` links traces and logs, `service`
+ * links a service row to either, and an exemplar — when a producer emits one
+ * — links a specific metric back to the exact span that produced it. Absent
+ * an exemplar, metrics are reachable from a service but never presented as
+ * correlated with a span, because they would not be.
  *
  * Every jump also pins the time range around the thing being followed.
  * Without that, following a log from three days ago lands on a view still
@@ -101,8 +103,21 @@ export function useCorrelate() {
       setView("logs");
     },
 
-    /** Metrics for a service. There are no exemplars, so this is as precise
-     * as metric correlation gets: the service, in the surrounding window. */
+    /** The specific metric an exemplar came from — a real metrics<->trace
+     * link, so it selects that metric rather than just the service. */
+    exemplarToMetric: (
+      metricName: string,
+      opts: { service?: string; atUnixNano?: number },
+    ) => {
+      focusTime(opts.atUnixNano);
+      setSelectedMetric(metricName);
+      if (opts.service) setMetricService(opts.service);
+      setView("metrics");
+    },
+
+    /** Metrics for a service — navigation from the services table, not a
+     * correlation. Picking a service genuinely means that service, so the
+     * claim is honest here in a way it would not be from a single span. */
     serviceToMetrics: (service: string, opts?: { atUnixNano?: number }) => {
       focusTime(opts?.atUnixNano);
       setMetricService(service);
