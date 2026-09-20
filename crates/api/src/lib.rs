@@ -510,16 +510,17 @@ async fn static_handler(uri: Uri) -> Response {
     let path = uri.path().trim_start_matches('/');
     let path = if path.is_empty() { "index.html" } else { path };
     let asset = UiAssets::get(path).map(|content| (path, content));
-    let (served, content) = match asset.or_else(|| UiAssets::get("index.html").map(|c| ("index.html", c))) {
-        Some(found) => found,
-        None => {
-            return (
-                StatusCode::NOT_FOUND,
-                "UI assets not embedded in this build",
-            )
-                .into_response()
-        }
-    };
+    let (served, content) =
+        match asset.or_else(|| UiAssets::get("index.html").map(|c| ("index.html", c))) {
+            Some(found) => found,
+            None => {
+                return (
+                    StatusCode::NOT_FOUND,
+                    "UI assets not embedded in this build",
+                )
+                    .into_response()
+            }
+        };
 
     // Without explicit caching the browser falls back to heuristics, and a
     // deployed UI change shows up whenever the browser feels like it — the
@@ -815,17 +816,18 @@ mod tests {
         ) -> anyhow::Result<Vec<otelview_model::TraceSummary>> {
             self.inner.find_traces(q).await
         }
-        async fn get_trace(
-            &self,
-            t: &str,
-        ) -> anyhow::Result<Vec<otelview_model::SpanRecord>> {
+        async fn get_trace(&self, t: &str) -> anyhow::Result<Vec<otelview_model::SpanRecord>> {
             self.inner.get_trace(t).await
         }
         async fn query_logs(
             &self,
             mut q: otelview_model::LogQuery,
         ) -> anyhow::Result<Vec<otelview_model::LogRecord>> {
-            q.limit = if q.limit == 0 { self.cap } else { q.limit.min(self.cap) };
+            q.limit = if q.limit == 0 {
+                self.cap
+            } else {
+                q.limit.min(self.cap)
+            };
             self.inner.query_logs(q).await
         }
         async fn list_metrics(&self) -> anyhow::Result<Vec<otelview_model::MetricInfo>> {
@@ -870,8 +872,11 @@ mod tests {
         storage.insert_logs(logs).await.unwrap();
 
         let app = router(&cfg, storage);
-        let (status, v) =
-            get_json(app, "/api/logs/histogram?buckets=7&start_ms=1000&end_ms=4500").await;
+        let (status, v) = get_json(
+            app,
+            "/api/logs/histogram?buckets=7&start_ms=1000&end_ms=4500",
+        )
+        .await;
         assert_eq!(status, StatusCode::OK);
 
         let total: u64 = v
@@ -920,8 +925,11 @@ mod tests {
         storage.insert_logs(logs).await.unwrap();
 
         let app = router(&cfg, storage);
-        let (status, v) =
-            get_json(app, "/api/logs/histogram?buckets=10&start_ms=1000&end_ms=7000").await;
+        let (status, v) = get_json(
+            app,
+            "/api/logs/histogram?buckets=10&start_ms=1000&end_ms=7000",
+        )
+        .await;
         assert_eq!(status, StatusCode::OK);
 
         let buckets = v.as_array().unwrap();

@@ -88,7 +88,13 @@ pub fn summarize_fields(
         if name.is_empty() {
             continue;
         }
-        value.truncate(60);
+        // By characters, not bytes: String::truncate panics when the byte
+        // offset lands inside a multibyte character, and track titles made
+        // that a live crash — every field-sidebar request against a value
+        // with an accent past position 60 took the API worker down.
+        if let Some((cut, _)) = value.char_indices().nth(60) {
+            value.truncate(cut);
+        }
         *fields.entry(name).or_default().entry(value).or_default() += 1;
     }
     let mut out: Vec<FieldInfo> = fields
@@ -437,5 +443,23 @@ fn bump(b: &mut LogBucket, severity_number: i32) {
         17..=20 => b.error += 1,
         21..=24 => b.fatal += 1,
         _ => b.info += 1,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// String::truncate panics mid-character; a track title with an accent
+    /// past position 60 took the whole fields endpoint down in production.
+    #[test]
+    fn field_values_truncate_on_character_boundaries() {
+        // 59 ASCII chars then a two-byte character spanning bytes 59..61,
+        // putting byte offset 60 inside it.
+        let long = format!("{}ééééé", "x".repeat(59));
+        let fields = summarize_fields(vec![("title".to_string(), long)].into_iter(), 10);
+        assert_eq!(fields.len(), 1);
+        let value = &fields[0].top_values[0].0;
+        assert_eq!(value.chars().count(), 60);
     }
 }
