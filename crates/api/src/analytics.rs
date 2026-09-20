@@ -7,6 +7,7 @@
 
 use std::collections::BTreeMap;
 
+use anyhow::Context;
 use otelview_model::{LogQuery, SpanRecord, TraceQuery};
 use otelview_storage::DynStorage;
 use serde::Serialize;
@@ -163,9 +164,25 @@ async fn sample_spans(
         })
         .await?;
     let sampled = summaries.len();
+
+    // Traces fetch concurrently. Each get_trace against a remote storage
+    // costs a round-trip (~200ms here), and fetching a few hundred samples
+    // one after another put the services screen at a minute per load — all
+    // of it network waiting, none of it query time. Sixteen in flight keeps
+    // well under the storage pool while collapsing the wall time to
+    // roughly samples/16 round-trips.
+    const CONCURRENT_FETCHES: usize = 16;
     let mut spans = Vec::new();
-    for s in summaries {
-        spans.extend(storage.get_trace(&s.trace_id).await?);
+    for batch in summaries.chunks(CONCURRENT_FETCHES) {
+        let mut tasks = tokio::task::JoinSet::new();
+        for s in batch {
+            let storage = storage.clone();
+            let trace_id = s.trace_id.clone();
+            tasks.spawn(async move { storage.get_trace(&trace_id).await });
+        }
+        while let Some(joined) = tasks.join_next().await {
+            spans.extend(joined.context("trace fetch task")??);
+        }
     }
     Ok((spans, sampled))
 }
