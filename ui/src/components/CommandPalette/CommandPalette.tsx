@@ -14,6 +14,7 @@ import {
   IconRoute,
   IconSearch,
   IconServer,
+  IconServer2,
   IconSettings,
   IconX,
 } from "@tabler/icons-react";
@@ -37,6 +38,8 @@ import { api } from "../../lib/api";
 import { plainTextField } from "../../lib/inputProps";
 import { bodyPreview, fmtAgo, fmtDuration, severityInfo } from "../../lib/format";
 import { serviceColor } from "../../lib/colors";
+import { describeTarget } from "../../lib/profiles";
+import { useServerProfiles } from "../../hooks/useProfiles";
 
 // Raycast-style global search ("/" or ⌘K): fuzzy commands + live search over
 // services, operations, metrics and traces. cmdk filters the static entries;
@@ -58,6 +61,7 @@ export function CommandPalette() {
   const setSelectedLog = useSetAtom(selectedLogAtom);
   const setLookback = useSetAtom(lookbackAtom);
   const qc = useQueryClient();
+  const { profiles, active, switchTo } = useServerProfiles();
 
   useEffect(() => {
     if (!open) setSearch("");
@@ -300,6 +304,27 @@ export function CommandPalette() {
               </Command.Item>
             ))}
           </Command.Group>
+
+          {profiles.length > 1 && (
+            <Command.Group heading="Servers" className={GROUP}>
+              {profiles.map((p) => (
+                <Command.Item
+                  key={p.id}
+                  value={`server switch ${p.name} ${p.baseUrl}`}
+                  onSelect={() => run(() => switchTo(p.id))}
+                  className={ITEM}
+                >
+                  <span className={p.id === active.id ? "text-neon-cyan" : "text-primary"}>
+                    <IconServer2 size={16} />
+                  </span>
+                  <span className="min-w-0 flex-1 truncate">{p.name}</span>
+                  <span className="shrink-0 text-[11px] text-default-400">
+                    {p.id === active.id ? "in use" : describeTarget(p)}
+                  </span>
+                </Command.Item>
+              ))}
+            </Command.Group>
+          )}
 
           <Command.Group heading="Go to" className={GROUP}>
             <Item icon={<IconRoute size={16} />} onSelect={() => run(() => setView("traces"))}>

@@ -2,7 +2,15 @@ import { atom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 import { atomFamily } from "jotai-family";
 import type { LogRecord } from "../lib/api";
+import {
+  activeProfile,
+  defaultSettings,
+  normalizeSettings,
+  type ApiSettings,
+} from "../lib/profiles";
 import type { Theme } from "../theme";
+
+export type { ApiSettings, ServerProfile } from "../lib/profiles";
 
 export type View = "traces" | "logs" | "metrics" | "services" | "settings";
 
@@ -24,16 +32,20 @@ export const paletteOpenAtom = atom<boolean>(false);
 /** Keyboard shortcuts help ("?"). */
 export const helpOpenAtom = atom<boolean>(false);
 
-/** API connection settings — used by the Tauri desktop build and remote
- * deployments; empty baseUrl = same origin. */
-export interface ApiSettings {
-  baseUrl: string;
-  token: string;
-}
-export const apiSettingsAtom = atomWithStorage<ApiSettings>("otelview.api", {
-  baseUrl: "",
-  token: "",
-});
+/** API connection settings: the saved server profiles and which one is
+ * live. Used by the Tauri desktop build and remote deployments; a profile
+ * with an empty baseUrl means "same origin". */
+const apiSettingsRawAtom = atomWithStorage<unknown>("otelview.api", defaultSettings());
+
+/** Reads normalize whatever is in storage — including the old single-server
+ * shape — so no consumer ever sees a half-valid value. */
+export const apiSettingsAtom = atom(
+  (get) => normalizeSettings(get(apiSettingsRawAtom)),
+  (_get, set, next: ApiSettings) => set(apiSettingsRawAtom, next),
+);
+
+/** The server every API call currently goes to. */
+export const activeProfileAtom = atom((get) => activeProfile(get(apiSettingsAtom)));
 
 /** Shared filters. */
 export const lookbackAtom = atomWithStorage<string>("otelview.lookback", "1h");

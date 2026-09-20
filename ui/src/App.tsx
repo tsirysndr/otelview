@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useAtomValue } from "jotai";
-import { apiSettingsAtom, railVisibleAtom, themeAtom, viewAtom } from "./state/atoms";
+import { activeProfileAtom, railVisibleAtom, themeAtom, viewAtom } from "./state/atoms";
 import { setApiConfig } from "./lib/api";
 import { applyTheme } from "./theme";
 import { useShortcuts } from "./hooks/useShortcuts";
@@ -22,11 +22,11 @@ export default function App() {
   const theme = useAtomValue(themeAtom);
   const view = useAtomValue(viewAtom);
   const rail = useAtomValue(railVisibleAtom);
-  const apiSettings = useAtomValue(apiSettingsAtom);
+  const activeProfile = useAtomValue(activeProfileAtom);
 
   // Keep the module-level config the fetch client reads in sync,
   // synchronously, so queries fired on mount see the right base URL.
-  setApiConfig(apiSettings);
+  setApiConfig(activeProfile);
 
   useEffect(() => applyTheme(theme), [theme]);
   useShortcuts();

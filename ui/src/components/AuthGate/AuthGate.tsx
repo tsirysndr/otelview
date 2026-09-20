@@ -1,10 +1,9 @@
 import { useState } from "react";
 import { Button, Input } from "@heroui/react";
 import { IconLock } from "@tabler/icons-react";
-import { useAtom } from "jotai";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { apiSettingsAtom } from "../../state/atoms";
-import { api, ApiError, setApiConfig } from "../../lib/api";
+import { useQuery } from "@tanstack/react-query";
+import { api, ApiError } from "../../lib/api";
+import { useServerProfiles } from "../../hooks/useProfiles";
 import { fieldProps, plainTextField } from "../../lib/inputProps";
 import { Field } from "../Field";
 
@@ -12,12 +11,11 @@ import { Field } from "../Field";
  * (ui.token in the config). The shell itself is public; every /api call is
  * gated server-side — this screen just collects the token. */
 export function AuthGate({ children }: { children: React.ReactNode }) {
-  const [settings, setSettings] = useAtom(apiSettingsAtom);
+  const { active, save } = useServerProfiles();
   const [token, setToken] = useState("");
-  const qc = useQueryClient();
 
   const { error, isLoading } = useQuery({
-    queryKey: ["auth-check", settings.token],
+    queryKey: ["auth-check", active.id, active.token],
     queryFn: api.stats,
     retry: false,
   });
@@ -25,12 +23,8 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   const unauthorized = error instanceof ApiError && error.status === 401;
   if (!unauthorized) return <>{children}</>;
 
-  const submit = () => {
-    const next = { ...settings, token: token.trim() };
-    setSettings(next);
-    setApiConfig(next);
-    qc.invalidateQueries();
-  };
+  // Unlocking re-tokens the profile we are already pointed at.
+  const submit = () => save({ ...active, token: token.trim() });
 
   return (
     <div className="flex h-full flex-col items-center justify-center gap-4 p-6">
@@ -66,7 +60,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
         <Button type="submit" color="primary" size="sm" isDisabled={!token.trim()}>
           unlock
         </Button>
-        {settings.token && (
+        {active.token && (
           <p className="text-center text-[11px] text-danger">
             token rejected — check it and try again
           </p>

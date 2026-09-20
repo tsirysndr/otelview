@@ -1,8 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
+import { useAtomValue } from "jotai";
 import { api } from "../../lib/api";
 import { fmtCount } from "../../lib/format";
+import { activeProfileAtom } from "../../state/atoms";
 
 export function StatusLine() {
+  const active = useAtomValue(activeProfileAtom);
   const { data, isError } = useQuery({
     queryKey: ["stats"],
     queryFn: api.stats,
@@ -41,6 +44,11 @@ export function StatusLine() {
         </>
       )}
       <div className="flex-1" />
+      {active.baseUrl && (
+        <span title={active.baseUrl}>
+          server <span className="text-neon-cyan">{active.name}</span>
+        </span>
+      )}
       <span>OTLP gRPC :4317 · HTTP :4318</span>
     </footer>
   );

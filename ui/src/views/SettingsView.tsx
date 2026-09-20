@@ -1,86 +1,123 @@
 import { Button, Input } from "@heroui/react";
-import { IconDeviceFloppy, IconPlugConnected } from "@tabler/icons-react";
-import { useAtom } from "jotai";
+import {
+  IconCheck,
+  IconDeviceFloppy,
+  IconPlugConnected,
+  IconPlus,
+  IconTrash,
+} from "@tabler/icons-react";
 import { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import { apiSettingsAtom } from "../state/atoms";
-import { setApiConfig } from "../lib/api";
 import { fieldProps, plainTextField } from "../lib/inputProps";
+import { describeTarget, newProfileId, type ServerProfile } from "../lib/profiles";
+import { useServerProfiles } from "../hooks/useProfiles";
 import { Field } from "../components/Field";
 
-/** API connection settings — mainly for the Tauri desktop app, which points
- * at a remote otelview server; the web build defaults to same-origin. */
-export function SettingsView() {
-  const [settings, setSettings] = useAtom(apiSettingsAtom);
-  const [baseUrl, setBaseUrl] = useState(settings.baseUrl);
-  const [token, setToken] = useState(settings.token);
+/** Probe a server without touching the shared api client, so testing a
+ * profile never disturbs the one currently in use. */
+async function probe(p: ServerProfile): Promise<string> {
+  try {
+    const url = (p.baseUrl.trim().replace(/\/+$/, "") || "") + "/api/stats";
+    const headers: Record<string, string> = {};
+    if (p.token.trim()) headers["authorization"] = `Bearer ${p.token.trim()}`;
+    const resp = await fetch(new URL(url, window.location.origin), { headers });
+    return resp.ok ? "connection OK ✓" : `failed: HTTP ${resp.status}`;
+  } catch (e) {
+    return `failed: ${e instanceof Error ? e.message : String(e)}`;
+  }
+}
+
+function ProfileEditor({
+  profile,
+  isActive,
+  canRemove,
+  onSave,
+  onRemove,
+  onUse,
+}: {
+  profile: ServerProfile;
+  isActive: boolean;
+  canRemove: boolean;
+  onSave: (p: ServerProfile) => void;
+  onRemove: () => void;
+  onUse: () => void;
+}) {
+  const [draft, setDraft] = useState(profile);
   const [status, setStatus] = useState<string | null>(null);
-  const qc = useQueryClient();
+  const dirty =
+    draft.name !== profile.name ||
+    draft.baseUrl !== profile.baseUrl ||
+    draft.token !== profile.token;
 
   const save = () => {
-    const next = { baseUrl: baseUrl.trim(), token: token.trim() };
-    setSettings(next);
-    setApiConfig(next);
-    qc.clear();
+    onSave({
+      ...draft,
+      name: draft.name.trim() || "unnamed",
+      baseUrl: draft.baseUrl.trim(),
+      token: draft.token.trim(),
+    });
     setStatus("saved ✓");
     setTimeout(() => setStatus(null), 2000);
   };
 
-  const test = async () => {
-    setStatus("testing…");
-    try {
-      const url = (baseUrl.trim().replace(/\/+$/, "") || "") + "/api/stats";
-      const headers: Record<string, string> = {};
-      if (token.trim()) headers["authorization"] = `Bearer ${token.trim()}`;
-      const resp = await fetch(new URL(url, window.location.origin), { headers });
-      setStatus(resp.ok ? "connection OK ✓" : `failed: HTTP ${resp.status}`);
-    } catch (e) {
-      setStatus(`failed: ${e instanceof Error ? e.message : String(e)}`);
-    }
-  };
-
   return (
-    <div className="mx-auto flex max-w-xl flex-col gap-4 p-6">
-      <div>
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-default-500">
-          API connection
-        </h2>
-        <p className="mt-1 text-xs text-default-500">
-          Where this UI reads data from. Leave the URL empty for the default:
-          the server that serves this page (web), or the local instance on
-          127.0.0.1:4319 (desktop — an embedded DuckDB-backed server starts
-          automatically when none is running). Set a URL to connect to any
-          remote otelview instance instead, e.g.{" "}
-          <span className="text-neon-cyan">http://otel.example.com:4319</span>.
-        </p>
+    <div
+      className={`flex flex-col gap-3 rounded-lg border p-3 ${
+        isActive ? "border-neon-cyan/60 bg-content1" : "border-divider"
+      }`}
+    >
+      <div className="flex items-center gap-2">
+        <Field label="name" className="flex-1">
+          <Input
+            {...plainTextField}
+            {...fieldProps}
+            aria-label={`Profile name for ${profile.name}`}
+            placeholder="production"
+            value={draft.name}
+            onValueChange={(name) => setDraft({ ...draft, name })}
+          />
+        </Field>
+        {isActive ? (
+          <span className="mt-4 flex shrink-0 items-center gap-1 text-[11px] text-neon-cyan">
+            <IconCheck size={13} /> in use
+          </span>
+        ) : (
+          <Button
+            className="mt-4 shrink-0"
+            size="sm"
+            variant="flat"
+            color="secondary"
+            onPress={onUse}
+          >
+            use
+          </Button>
+        )}
       </div>
       <Field label="API base URL">
         <Input
           {...plainTextField}
           {...fieldProps}
-          size="md"
-          aria-label="API base URL"
+          aria-label={`API base URL for ${profile.name}`}
           placeholder="http://127.0.0.1:4319 (empty = same origin)"
-          value={baseUrl}
-          onValueChange={setBaseUrl}
+          value={draft.baseUrl}
+          onValueChange={(baseUrl) => setDraft({ ...draft, baseUrl })}
         />
       </Field>
       <Field label="API token">
         <Input
           {...plainTextField}
           {...fieldProps}
-          size="md"
-          aria-label="API token"
+          aria-label={`API token for ${profile.name}`}
           placeholder="only if auth.protect_api is enabled"
           type="password"
-          value={token}
-          onValueChange={setToken}
+          value={draft.token}
+          onValueChange={(token) => setDraft({ ...draft, token })}
         />
       </Field>
       <div className="flex items-center gap-2">
         <Button
           color="primary"
           size="sm"
+          isDisabled={!dirty}
           startContent={<IconDeviceFloppy size={15} />}
           onPress={save}
         >
@@ -90,11 +127,86 @@ export function SettingsView() {
           variant="flat"
           size="sm"
           startContent={<IconPlugConnected size={15} />}
-          onPress={test}
+          onPress={async () => {
+            setStatus("testing…");
+            setStatus(await probe(draft));
+          }}
         >
           test connection
         </Button>
+        {canRemove && (
+          <Button
+            variant="light"
+            size="sm"
+            color="danger"
+            aria-label={`Remove ${profile.name}`}
+            startContent={<IconTrash size={15} />}
+            onPress={onRemove}
+          >
+            remove
+          </Button>
+        )}
         {status && <span className="text-xs text-default-500">{status}</span>}
+      </div>
+    </div>
+  );
+}
+
+/** API connection settings: the servers this UI can point at. Mainly for the
+ * Tauri desktop app and for anyone juggling prod/staging; the web build
+ * defaults to a single same-origin profile. */
+export function SettingsView() {
+  const { profiles, active, save, saveAndSwitch, switchTo, remove } =
+    useServerProfiles();
+
+  return (
+    <div className="mx-auto flex max-w-xl flex-col gap-4 p-6">
+      <div>
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-default-500">
+          servers
+        </h2>
+        <p className="mt-1 text-xs text-default-500">
+          Where this UI reads data from. Leave a URL empty for the default: the
+          server that serves this page (web), or the local instance on
+          127.0.0.1:4319 (desktop — an embedded DuckDB-backed server starts
+          automatically when none is running). Add more to switch between
+          instances, e.g.{" "}
+          <span className="text-neon-cyan">http://otel.example.com:4319</span>.
+          Switching is also available from the command palette (⌘K).
+        </p>
+        <p className="mt-1 text-[11px] text-default-400">
+          Saved in this browser only — tokens included, so avoid shared machines.
+        </p>
+      </div>
+
+      {profiles.map((p) => (
+        <ProfileEditor
+          key={p.id}
+          profile={p}
+          isActive={p.id === active.id}
+          canRemove={profiles.length > 1}
+          onSave={save}
+          onUse={() => switchTo(p.id)}
+          onRemove={() => remove(p.id)}
+        />
+      ))}
+
+      <div>
+        <Button
+          size="sm"
+          variant="flat"
+          startContent={<IconPlus size={15} />}
+          onPress={() =>
+            saveAndSwitch({
+              id: newProfileId(),
+              name: `server ${profiles.length + 1}`,
+              baseUrl: "",
+              token: "",
+            })
+          }
+        >
+          add server
+        </Button>
       </div>
 
       <div className="mt-6 rounded-lg border border-divider bg-content1 p-4 text-xs text-default-500">
@@ -108,6 +220,10 @@ export function SettingsView() {
 # with header auth:
 export OTEL_EXPORTER_OTLP_HEADERS="x-otelview-token=<token>"`}
         </pre>
+        <p className="mt-2 text-[11px] text-default-400">
+          currently reading from{" "}
+          <span className="text-neon-cyan">{describeTarget(active)}</span>
+        </p>
       </div>
     </div>
   );
