@@ -350,8 +350,14 @@ pub async fn log_histogram(
             }
         }
 
-        // A short page means the interval is exhausted.
-        if page_len < HISTOGRAM_PAGE {
+        // Only an empty page proves the interval is exhausted. "Shorter than
+        // requested" does not: a backend may clamp the page to its own search
+        // depth (the postgres storage caps at MAX_SEARCH_DEPTH, 1000 by
+        // default), and treating its clamped-but-full pages as the end put
+        // every log after the first thousand back out of the histogram — the
+        // very truncation this pager exists to remove. The price of the
+        // stricter test is one empty query at the end of the walk.
+        if page_len == 0 {
             break;
         }
         if scanned >= HISTOGRAM_MAX_SCANNED {

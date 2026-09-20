@@ -761,6 +761,111 @@ mod tests {
         assert_eq!(total_info, 1);
     }
 
+    /// A backend that caps every log query at its own search depth,
+    /// regardless of the limit asked for — the postgres storage does exactly
+    /// this (MAX_SEARCH_DEPTH, default 1000). The histogram pager must not
+    /// read a clamped-but-full page as the end of the window: in production
+    /// that stopped the walk after the newest thousand logs, and the chart
+    /// was back to a single bar.
+    struct ClampedStorage {
+        inner: MemoryStorage,
+        cap: usize,
+    }
+
+    #[async_trait::async_trait]
+    impl otelview_storage::Storage for ClampedStorage {
+        async fn insert_spans(&self, s: Vec<otelview_model::SpanRecord>) -> anyhow::Result<()> {
+            self.inner.insert_spans(s).await
+        }
+        async fn insert_logs(&self, l: Vec<otelview_model::LogRecord>) -> anyhow::Result<()> {
+            self.inner.insert_logs(l).await
+        }
+        async fn insert_metrics(&self, p: Vec<otelview_model::MetricPoint>) -> anyhow::Result<()> {
+            self.inner.insert_metrics(p).await
+        }
+        async fn list_services(&self) -> anyhow::Result<Vec<String>> {
+            self.inner.list_services().await
+        }
+        async fn list_operations(&self, s: &str) -> anyhow::Result<Vec<String>> {
+            self.inner.list_operations(s).await
+        }
+        async fn find_traces(
+            &self,
+            q: otelview_model::TraceQuery,
+        ) -> anyhow::Result<Vec<otelview_model::TraceSummary>> {
+            self.inner.find_traces(q).await
+        }
+        async fn get_trace(
+            &self,
+            t: &str,
+        ) -> anyhow::Result<Vec<otelview_model::SpanRecord>> {
+            self.inner.get_trace(t).await
+        }
+        async fn query_logs(
+            &self,
+            mut q: otelview_model::LogQuery,
+        ) -> anyhow::Result<Vec<otelview_model::LogRecord>> {
+            q.limit = if q.limit == 0 { self.cap } else { q.limit.min(self.cap) };
+            self.inner.query_logs(q).await
+        }
+        async fn list_metrics(&self) -> anyhow::Result<Vec<otelview_model::MetricInfo>> {
+            self.inner.list_metrics().await
+        }
+        async fn query_metric_series(
+            &self,
+            q: otelview_model::MetricQuery,
+        ) -> anyhow::Result<Vec<otelview_model::MetricSeries>> {
+            self.inner.query_metric_series(q).await
+        }
+        async fn stats(&self) -> anyhow::Result<otelview_model::StorageStats> {
+            self.inner.stats().await
+        }
+    }
+
+    #[tokio::test]
+    async fn log_histogram_survives_a_backend_that_clamps_page_sizes() {
+        let cfg = Config::default();
+        let storage: DynStorage = Arc::new(ClampedStorage {
+            inner: MemoryStorage::new(&MemoryConfig::default()),
+            cap: 1_000,
+        });
+
+        // Well past the clamp, spread over a known window.
+        const COUNT: u64 = 3_500;
+        let logs: Vec<_> = (0..COUNT)
+            .map(|i| otelview_model::LogRecord {
+                time_unix_nano: 1_000_000_000 + i * 1_000_000,
+                observed_time_unix_nano: 1_000_000_000 + i * 1_000_000,
+                severity_number: 9,
+                severity_text: String::new(),
+                body: serde_json::json!("x"),
+                attributes: serde_json::json!({}),
+                resource_attributes: serde_json::json!({}),
+                service_name: "svc".into(),
+                trace_id: String::new(),
+                span_id: String::new(),
+                scope_name: String::new(),
+            })
+            .collect();
+        storage.insert_logs(logs).await.unwrap();
+
+        let app = router(&cfg, storage);
+        let (status, v) =
+            get_json(app, "/api/logs/histogram?buckets=7&start_ms=1000&end_ms=4500").await;
+        assert_eq!(status, StatusCode::OK);
+
+        let total: u64 = v
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|b| b["info"].as_u64().unwrap())
+            .sum();
+        assert_eq!(
+            total, COUNT,
+            "the pager must walk past the backend's clamp, not stop at it"
+        );
+    }
+
     /// Every bucket in the window must be counted, not just the newest page.
     ///
     /// The histogram used to read one capped query of the newest logs while
