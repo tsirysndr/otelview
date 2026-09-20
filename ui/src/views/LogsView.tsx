@@ -18,6 +18,9 @@ import { LogHistogram } from "../components/LogHistogram";
 import { FilterSelect } from "../components/FilterSelect";
 import { ServiceChip } from "../components/ServiceChip";
 
+/// How many more log lines "load older" asks for each time.
+const LOG_PAGE = 300;
+
 const SEVERITIES = [
   { key: "0", label: "all levels" },
   { key: "5", label: "debug +" },
@@ -69,6 +72,11 @@ export function LogsView() {
   });
   const kqlError =
     error instanceof ApiError && error.status === 400 ? error.message : null;
+
+  // The server returns at most `limit`, so a full page means there is more in
+  // the window than is on screen. Worth saying: without it a capped list is
+  // indistinguishable from a window that simply holds nothing older.
+  const truncated = !isLoading && !kqlError && logs.length >= filters.limit;
 
   const { data: fields = [] } = useQuery({
     queryKey: ["log-fields", filters.service, filters.minSeverity, timeParams],
@@ -226,6 +234,22 @@ export function LogsView() {
             </button>
           );
         })}
+        {truncated && (
+          <div className="flex items-center justify-center gap-3 border-t border-divider px-3 py-3 text-[11px] text-default-500">
+            {/* The list is the newest N, not the whole window. Said plainly,
+                because a silently capped list reads as missing data — the
+                histogram above always covers the full range. */}
+            <span>
+              showing the newest {logs.length.toLocaleString()} — the window holds more
+            </span>
+            <button
+              onClick={() => setFilters({ ...filters, limit: filters.limit + LOG_PAGE })}
+              className="rounded border border-divider px-2 py-1 text-[11px] text-default-600 transition-colors hover:border-neon-cyan hover:text-neon-cyan"
+            >
+              load {LOG_PAGE.toLocaleString()} older
+            </button>
+          </div>
+        )}
       </div>
       </div>
     </div>
