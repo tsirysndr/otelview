@@ -118,7 +118,20 @@ jobs:
           # first attempt's uploads stuck. Already-published is success for a
           # release pipeline, not failure.
           push_package() {
-            local package=$1 status
+            local package=$1 status version
+            version="${RELEASE_TAG#v}"
+            # A package whose name does not carry the release version is a
+            # stale build — some version file was not bumped. Refuse it: the
+            # 409-skip below would otherwise hide the mistake, which is
+            # exactly how the desktop packages sat at 0.1.1 across two
+            # releases while the job reported success.
+            case "$(basename "$package")" in
+              *"$version"*) ;;
+              *)
+                echo "::error::$(basename "$package") does not carry version $version — a version file was not bumped" >&2
+                return 1
+                ;;
+            esac
             status=$(curl -sS -o /tmp/fury-response -w "%{http_code}" \
               -F package=@"$package" \
               "https://${FURY_TOKEN}@push.fury.io/${FURY_ACCOUNT}/")
@@ -229,7 +242,20 @@ jobs:
           # first attempt's uploads stuck. Already-published is success for a
           # release pipeline, not failure.
           push_package() {
-            local package=$1 status
+            local package=$1 status version
+            version="${RELEASE_TAG#v}"
+            # A package whose name does not carry the release version is a
+            # stale build — some version file was not bumped. Refuse it: the
+            # 409-skip below would otherwise hide the mistake, which is
+            # exactly how the desktop packages sat at 0.1.1 across two
+            # releases while the job reported success.
+            case "$(basename "$package")" in
+              *"$version"*) ;;
+              *)
+                echo "::error::$(basename "$package") does not carry version $version — a version file was not bumped" >&2
+                return 1
+                ;;
+            esac
             status=$(curl -sS -o /tmp/fury-response -w "%{http_code}" \
               -F package=@"$package" \
               "https://${FURY_TOKEN}@push.fury.io/${FURY_ACCOUNT}/")
