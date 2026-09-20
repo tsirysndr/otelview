@@ -142,6 +142,13 @@ impl Storage for JaegerStorage {
     }
 
     async fn list_operations(&self, service: &str) -> Result<Vec<String>> {
+        // The Jaeger v2 API requires a service; the UI asks with none when
+        // "all services" is selected. The other backends answer that with an
+        // empty list, so do the same here instead of a guaranteed
+        // InvalidArgument that surfaced as a 500 on every traces-page load.
+        if service.is_empty() {
+            return Ok(Vec::new());
+        }
         let resp = self
             .reader()
             .get_operations(jsv2::GetOperationsRequest {

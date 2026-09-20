@@ -33,6 +33,9 @@ function TraceList() {
   const { data: operations = [] } = useQuery({
     queryKey: ["operations", filters.service],
     queryFn: () => api.operations(filters.service),
+    // With no service picked there is nothing to ask for — the operations
+    // dropdown only has entries per service.
+    enabled: filters.service !== "",
   });
   const { data: attrFields = [] } = useQuery({
     queryKey: ["trace-fields", filters.service, timeParams],
