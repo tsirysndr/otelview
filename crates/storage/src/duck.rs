@@ -129,6 +129,13 @@ impl DuckdbStorage {
         } else {
             Connection::open(path).with_context(|| format!("opening DuckDB at {path}"))?
         };
+        // Insertion order is never observable here — every query orders by a
+        // time column — and not preserving it frees DuckDB from stitching
+        // results back into arrival order. Benchmarked on this workload it is
+        // worth ~3x on the newest-N log page and noise elsewhere; kept
+        // because it can only help a schema that never relies on row order.
+        conn.execute_batch("SET preserve_insertion_order = false;")
+            .context("configuring DuckDB")?;
         conn.execute_batch(SCHEMA)
             .context("creating DuckDB schema")?;
 

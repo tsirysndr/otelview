@@ -23,6 +23,8 @@ The simplest way to inspect OpenTelemetry data on your own infrastructure: one s
 ## Table of Contents
 
 - [Highlights](#highlights)
+- [Used in production](#used-in-production)
+- [Benchmarks](#benchmarks)
 - [Install](#install)
 - [Quickstart](#quickstart)
 - [Screenshots](#screenshots)
@@ -47,6 +49,42 @@ The simplest way to inspect OpenTelemetry data on your own infrastructure: one s
 - **Single binary**: the React UI is embedded; the whole thing is one self-contained executable.
 - **Desktop app**: a Tauri shell pointing at any remote otelview API.
 - **Config**: YAML or TOML, every field optional, CLI overrides for the common knobs.
+
+## Used in production
+
+otelview runs in production at [Rocksky](https://rocksky.app), collecting all
+three signals from its full fleet of Rust, Node and Go services — millions of
+spans, log records and metric points a day into a single DuckDB-backed
+instance, with `storage.retention` keeping the database bounded.
+
+## Benchmarks
+
+One seeded run of every storage path against the embedded DuckDB backend, on
+an Apple M-series laptop (`cargo bench -p otelview-storage --bench
+duck_queries -- 1000000`). Dataset: 1M spans across 250k traces, 1M logs, 2M
+metric points — 4M rows, with JSON attributes on every row.
+
+| operation | time | rate |
+| --- | --- | --- |
+| insert 1M spans | 2.4s | 416k rows/s |
+| insert 1M logs | 1.6s | 613k rows/s |
+| insert 2M metric points | 3.2s | 632k rows/s |
+| find_traces, newest 20 | 7.2ms | |
+| find_traces, service + errors only | 3.2ms | |
+| find_traces, attribute key=value | 32.6ms | |
+| find_traces, attribute substring | 15.3ms | |
+| get_trace | 0.6ms | |
+| query_logs, newest 300 | 4.8ms | |
+| query_logs, body substring | 23.6ms | |
+| query_logs, errors only | 4.4ms | |
+| metric series (8 series, 4k points) | 42.7ms | |
+| list_services / operations / stats | < 9ms | |
+| retention sweep, 2.46M expired rows | 1.2s | 2.1M rows/s |
+
+Reads never queue behind ingest: writes serialize on one connection and
+queries run on a pool of their own, against a consistent MVCC snapshot.
+`cargo bench -p otelview-storage --bench duck_ingest` times the write path on
+its own; both benches take a row count as their first argument.
 
 ## Install
 

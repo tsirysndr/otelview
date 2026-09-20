@@ -33,3 +33,7 @@ serde_json = { workspace = true }
 [[bench]]
 name = "duck_ingest"
 harness = false
+
+[[bench]]
+name = "duck_queries"
+harness = false
