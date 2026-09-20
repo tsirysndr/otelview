@@ -10,10 +10,11 @@ import {
 } from "../state/atoms";
 import { fieldProps, plainTextField, switchClassNames } from "../lib/inputProps";
 import { useTimeParams } from "../hooks/useTimeParams";
-import { api } from "../lib/api";
+import { api, ApiError } from "../lib/api";
 import { fmtAgo, fmtDuration } from "../lib/format";
 import { serviceNeon } from "../lib/colors";
 import { AttrInput } from "../components/AttrInput";
+import { TraceQlInput } from "../components/TraceQlInput";
 import { EmptyState } from "../components/EmptyState";
 import { Field } from "../components/Field";
 import { FilterSelect } from "../components/FilterSelect";
@@ -44,20 +45,28 @@ function TraceList() {
     refetchInterval: live ? 10_000 : false,
   });
 
-  const { data: traces = [], isLoading } = useQuery({
+  const traceqlMode = filters.mode === "traceql";
+
+  const { data: traces = [], isLoading, error } = useQuery({
     queryKey: ["traces", filters, timeParams],
     queryFn: () =>
       api.traces({
         service: filters.service || undefined,
         operation: filters.operation || undefined,
-        q: filters.q || undefined,
+        // The two query modes are mutually exclusive: only the active one is
+        // sent, so switching modes never leaves a stale filter applied.
+        q: traceqlMode ? undefined : filters.q || undefined,
+        traceql: traceqlMode ? filters.traceql || undefined : undefined,
         min_duration_ms: filters.minDurationMs ? Number(filters.minDurationMs) : undefined,
         errors_only: filters.errorsOnly || undefined,
         ...timeParams,
         limit: filters.limit,
       }),
     refetchInterval: live ? 3_000 : false,
+    retry: false,
   });
+  const queryError =
+    error instanceof ApiError && error.status === 400 ? error.message : null;
 
   const maxDuration = Math.max(...traces.map((t) => t.duration_nanos), 1);
 
@@ -92,15 +101,52 @@ function TraceList() {
             ]}
           />
         </Field>
-        <Field label="attributes" className="min-w-64 flex-1">
-          <AttrInput
-            historyKey="traces.attributes"
-            value={filters.q}
-            onChange={(q) => setFilters({ ...filters, q })}
-            fields={attrFields}
-            placeholder="http.method=GET or any text"
-          />
-        </Field>
+        <div className="flex min-w-64 flex-1 flex-col gap-0.5">
+          <div className="flex items-center gap-2 px-0.5">
+            <span className="text-[10px] uppercase tracking-wide text-default-500">
+              query
+            </span>
+            <div className="flex items-center gap-0.5 rounded bg-content2 p-0.5">
+              {(["attributes", "traceql"] as const).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setFilters({ ...filters, mode: m })}
+                  aria-pressed={filters.mode === m}
+                  title={
+                    m === "traceql"
+                      ? "TraceQL — e.g. { status = error && duration > 100ms }"
+                      : "Simple attribute match — key=value or any text"
+                  }
+                  className={`rounded px-1.5 text-[10px] transition-colors ${
+                    filters.mode === m
+                      ? "bg-content4 text-foreground"
+                      : "text-default-500 hover:text-foreground"
+                  }`}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
+          </div>
+          {traceqlMode ? (
+            <TraceQlInput
+              historyKey="traces.traceql"
+              value={filters.traceql}
+              onChange={(traceql) => setFilters({ ...filters, traceql })}
+              fields={attrFields}
+              invalid={!!queryError}
+              placeholder="{ status = error && duration > 100ms }"
+            />
+          ) : (
+            <AttrInput
+              historyKey="traces.attributes"
+              value={filters.q}
+              onChange={(q) => setFilters({ ...filters, q })}
+              fields={attrFields}
+              placeholder="http.method=GET or any text"
+            />
+          )}
+        </div>
         <Field label="min duration (ms)" className="w-32">
         <Input
           {...plainTextField}
@@ -123,6 +169,12 @@ function TraceList() {
           <span className="text-xs text-default-500">errors only</span>
         </div>
       </div>
+
+      {queryError && (
+        <div className="shrink-0 border-b border-divider bg-danger/10 px-3 py-1.5 text-xs text-danger">
+          {queryError}
+        </div>
+      )}
 
       {/* duration scatter (Jaeger-style) */}
       {traces.length > 1 && (

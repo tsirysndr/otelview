@@ -109,6 +109,7 @@ export interface TraceSearchParams {
   service?: string;
   operation?: string;
   q?: string;
+  traceql?: string;
   min_duration_ms?: number;
   errors_only?: boolean;
   lookback?: string;

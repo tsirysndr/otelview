@@ -64,6 +64,58 @@ describe("filter wiring", () => {
     );
   });
 
+  it("the traceql mode sends traceql and drops the attribute query", async () => {
+    renderApp(<TracesView />);
+    await waitFor(() => expect(traceCalls.length).toBeGreaterThan(0));
+
+    // Attribute mode is the default and uses `q`.
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "Attribute filter" }),
+      "http.method=GET",
+    );
+    await waitFor(() => expect(traceCalls.at(-1)!.get("q")).toBe("http.method=GET"));
+
+    await userEvent.click(screen.getByRole("button", { name: "traceql" }));
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "TraceQL query" }),
+      "{{ status = error }",
+    );
+    await waitFor(() =>
+      expect(traceCalls.at(-1)!.get("traceql")).toBe("{ status = error }"),
+    );
+    // The attribute query must not tag along once TraceQL is driving.
+    expect(traceCalls.at(-1)!.get("q")).toBeNull();
+
+    // Switching back restores the attribute query and drops traceql.
+    await userEvent.click(screen.getByRole("button", { name: "attributes" }));
+    await waitFor(() => expect(traceCalls.at(-1)!.get("q")).toBe("http.method=GET"));
+    expect(traceCalls.at(-1)!.get("traceql")).toBeNull();
+  });
+
+  it("surfaces a TraceQL parse error from the API", async () => {
+    server.use(
+      http.get("/api/traces", ({ request }) => {
+        const url = new URL(request.url);
+        traceCalls.push(url.searchParams);
+        if (url.searchParams.get("traceql")) {
+          return new HttpResponse("invalid TraceQL query: expected '}'", {
+            status: 400,
+          });
+        }
+        return HttpResponse.json(traceSummaryFixtures);
+      }),
+    );
+    renderApp(<TracesView />);
+    await waitFor(() => expect(traceCalls.length).toBeGreaterThan(0));
+
+    await userEvent.click(screen.getByRole("button", { name: "traceql" }));
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "TraceQL query" }),
+      "{{ status = ",
+    );
+    expect(await screen.findByText(/invalid TraceQL query/)).toBeInTheDocument();
+  });
+
   it("trace service + errors-only filters reach the API", async () => {
     renderApp(<TracesView />);
     await waitFor(() => expect(traceCalls.length).toBeGreaterThan(0));

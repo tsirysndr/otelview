@@ -21,6 +21,7 @@ use tower_http::cors::CorsLayer;
 pub mod analytics;
 pub mod kql;
 pub mod seriesfns;
+pub mod traceql;
 
 #[derive(RustEmbed)]
 #[folder = "../../ui/dist"]
@@ -168,12 +169,19 @@ async fn operations(State(state): State<ApiState>, Query(p): Query<ServiceParams
     }
 }
 
+/// How many candidate traces a TraceQL query pulls spans for before giving
+/// up. Each candidate costs one `get_trace`, so this bounds the work a single
+/// request can do; matching stops as soon as `limit` traces are found.
+const TRACEQL_SCAN_LIMIT: usize = 200;
+
 #[derive(Deserialize)]
 struct TraceParams {
     service: Option<String>,
     operation: Option<String>,
     /// Substring or key=value match over attributes.
     q: Option<String>,
+    /// TraceQL query, e.g. `{ status = error && duration > 100ms }`.
+    traceql: Option<String>,
     /// Minimum span duration in milliseconds.
     min_duration_ms: Option<f64>,
     max_duration_ms: Option<f64>,
@@ -194,6 +202,17 @@ async fn traces(State(state): State<ApiState>, Query(p): Query<TraceParams>) -> 
             .map(|window| now_unix_nanos().saturating_sub(window))
     });
     let start_time_max_unix_nano = p.end_ms.map(|ms| ms * 1_000_000);
+    let traceql_expr = match p.traceql.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        Some(q) => match traceql::parse(q) {
+            Ok(expr) => expr,
+            Err(e) => {
+                return (StatusCode::BAD_REQUEST, format!("invalid TraceQL query: {e}"))
+                    .into_response()
+            }
+        },
+        None => None,
+    };
+    let limit = p.limit.unwrap_or(20).clamp(1, 500);
     let q = TraceQuery {
         service: p.service.filter(|s| !s.is_empty()),
         operation: p.operation.filter(|s| !s.is_empty()),
@@ -203,12 +222,37 @@ async fn traces(State(state): State<ApiState>, Query(p): Query<TraceParams>) -> 
         start_time_min_unix_nano,
         start_time_max_unix_nano,
         errors_only: p.errors_only.unwrap_or(false),
-        limit: p.limit.unwrap_or(20).clamp(1, 500),
+        // TraceQL needs a candidate pool to filter down from, since it
+        // predicates on spans the summary does not carry.
+        limit: match traceql_expr {
+            Some(_) => TRACEQL_SCAN_LIMIT.max(limit),
+            None => limit,
+        },
     };
-    match state.storage.find_traces(q).await {
-        Ok(t) => Json(t).into_response(),
-        Err(e) => internal(e),
+    let candidates = match state.storage.find_traces(q).await {
+        Ok(t) => t,
+        Err(e) => return internal(e),
+    };
+    let Some(expr) = traceql_expr else {
+        return Json(candidates).into_response();
+    };
+    // Summaries come back newest-first, so taking the first `limit` matches
+    // gives the newest matching traces without scanning the whole pool.
+    let mut out = Vec::with_capacity(limit);
+    for summary in candidates {
+        match state.storage.get_trace(&summary.trace_id).await {
+            Ok(spans) => {
+                if traceql::eval(&expr, &spans) {
+                    out.push(summary);
+                    if out.len() >= limit {
+                        break;
+                    }
+                }
+            }
+            Err(e) => return internal(e),
+        }
     }
+    Json(out).into_response()
 }
 
 async fn trace_detail(State(state): State<ApiState>, Path(trace_id): Path<String>) -> Response {
@@ -948,6 +992,73 @@ mod tests {
         for (i, b) in buckets.iter().enumerate() {
             assert_eq!(b["info"].as_u64().unwrap(), 600, "bucket {i} is uneven");
         }
+    }
+
+    #[tokio::test]
+    async fn traceql_filters_traces() {
+        let (cfg, storage) = test_state();
+        // Two traces: one healthy and fast, one slow with an erroring span.
+        let mut ok_root = span("t-ok", "gateway", 1_000);
+        ok_root.attributes = json!({"http.method": "GET"});
+        let mut bad_root = span("t-bad", "gateway", 2_000);
+        bad_root.attributes = json!({"http.method": "GET"});
+        let mut bad_child = span("t-bad", "payments", 2_000);
+        bad_child.span_id = "s2".into();
+        bad_child.parent_span_id = "s1".into();
+        bad_child.name = "charge".into();
+        bad_child.status_code = 2;
+        bad_child.end_time_unix_nano = 2_000 + 300_000_000; // 300ms
+        bad_child.attributes = json!({"http.status_code": 502});
+        storage
+            .insert_spans(vec![ok_root, bad_root, bad_child])
+            .await
+            .unwrap();
+        let app = router(&cfg, storage);
+
+        // `{ status = error }` keeps only the trace with the failing span.
+        let (status, v) = get_json(app.clone(), "/api/traces?traceql=%7B%20status%20%3D%20error%20%7D").await;
+        assert_eq!(status, StatusCode::OK);
+        let got = v.as_array().unwrap();
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0]["trace_id"], "t-bad");
+
+        // Duration predicate over span intrinsics.
+        let (status, v) =
+            get_json(app.clone(), "/api/traces?traceql=%7B%20duration%20%3E%20100ms%20%7D").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(v.as_array().unwrap().len(), 1);
+
+        // Spanset `&&` is satisfied across different spans of one trace.
+        let (status, v) = get_json(
+            app.clone(),
+            "/api/traces?traceql=%7B%20name%20%3D%20%22charge%22%20%7D%20%26%26%20%7B%20.http.method%20%3D%20%22GET%22%20%7D",
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(v.as_array().unwrap().len(), 1);
+
+        // Nothing matches -> empty array, not an error.
+        let (status, v) =
+            get_json(app.clone(), "/api/traces?traceql=%7B%20status%20%3D%20ok%20%7D").await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(v.as_array().unwrap().is_empty());
+
+        // A malformed query is a 400, matching the KQL contract.
+        let (status, _) = get_json(app.clone(), "/api/traces?traceql=%7Bbad").await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+
+        // Unsupported structural operators are refused, not silently ignored.
+        let (status, _) = get_json(
+            app.clone(),
+            "/api/traces?traceql=%7Bname%3D%22a%22%7D%20%3E%3E%20%7Bname%3D%22b%22%7D",
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+
+        // An empty traceql param behaves as no filter at all.
+        let (status, v) = get_json(app, "/api/traces?traceql=").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(v.as_array().unwrap().len(), 2);
     }
 
     #[tokio::test]

@@ -42,10 +42,16 @@ export const customRangeAtom = atom<{ from: number; to: number } | null>(null);
 export const liveAtom = atomWithStorage<boolean>("otelview.live", true);
 
 /** Trace search filters (jotai-global so they survive view switches). */
+export type TraceQueryMode = "attributes" | "traceql";
+
 export interface TraceFilters {
   service: string;
   operation: string;
   q: string;
+  /** TraceQL source, used when `mode` is "traceql". */
+  traceql: string;
+  /** Which of `q` / `traceql` the filter bar is editing and sending. */
+  mode: TraceQueryMode;
   minDurationMs: string;
   errorsOnly: boolean;
   limit: number;
@@ -54,6 +60,8 @@ export const traceFiltersAtom = atom<TraceFilters>({
   service: "",
   operation: "",
   q: "",
+  traceql: "",
+  mode: "attributes",
   minDurationMs: "",
   errorsOnly: false,
   limit: 50,

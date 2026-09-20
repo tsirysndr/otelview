@@ -1430,6 +1430,7 @@ dependencies = [
  "otelview-config",
  "otelview-model",
  "otelview-storage",
+ "regex",
  "rust-embed",
  "serde",
  "serde_json",
