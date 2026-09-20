@@ -509,17 +509,37 @@ async fn config_view(State(state): State<ApiState>) -> Response {
 async fn static_handler(uri: Uri) -> Response {
     let path = uri.path().trim_start_matches('/');
     let path = if path.is_empty() { "index.html" } else { path };
-    match UiAssets::get(path).or_else(|| UiAssets::get("index.html")) {
-        Some(content) => {
-            let mime = mime_guess(path);
-            ([(header::CONTENT_TYPE, mime)], content.data).into_response()
+    let asset = UiAssets::get(path).map(|content| (path, content));
+    let (served, content) = match asset.or_else(|| UiAssets::get("index.html").map(|c| ("index.html", c))) {
+        Some(found) => found,
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                "UI assets not embedded in this build",
+            )
+                .into_response()
         }
-        None => (
-            StatusCode::NOT_FOUND,
-            "UI assets not embedded in this build",
-        )
-            .into_response(),
-    }
+    };
+
+    // Without explicit caching the browser falls back to heuristics, and a
+    // deployed UI change shows up whenever the browser feels like it — the
+    // symptom being an old bundle after an upgrade until a hard refresh.
+    // Vite hashes every file under assets/ by content, so those are safe to
+    // cache forever; the entry document is what names them, so it must be
+    // revalidated on every load.
+    let cache = if served.starts_with("assets/") {
+        "public, max-age=31536000, immutable"
+    } else {
+        "no-cache"
+    };
+    (
+        [
+            (header::CONTENT_TYPE, mime_guess(served)),
+            (header::CACHE_CONTROL, cache),
+        ],
+        content.data,
+    )
+        .into_response()
 }
 
 fn mime_guess(path: &str) -> &'static str {
