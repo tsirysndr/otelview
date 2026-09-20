@@ -8,9 +8,11 @@ import {
   normalizeSettings,
   type ApiSettings,
 } from "../lib/profiles";
+import { normalizeSaved, type SavedQuery } from "../lib/savedQueries";
 import type { Theme } from "../theme";
 
 export type { ApiSettings, ServerProfile } from "../lib/profiles";
+export type { QueryKind, SavedQuery } from "../lib/savedQueries";
 
 export type View = "traces" | "logs" | "metrics" | "services" | "settings";
 
@@ -42,6 +44,14 @@ const apiSettingsRawAtom = atomWithStorage<unknown>("otelview.api", defaultSetti
 export const apiSettingsAtom = atom(
   (get) => normalizeSettings(get(apiSettingsRawAtom)),
   (_get, set, next: ApiSettings) => set(apiSettingsRawAtom, next),
+);
+
+/** Named queries the user chose to keep. Reads normalize whatever is in
+ * storage so a malformed entry can never break the filter bar. */
+const savedQueriesRawAtom = atomWithStorage<unknown>("otelview.saved-queries", []);
+export const savedQueriesAtom = atom(
+  (get) => normalizeSaved(get(savedQueriesRawAtom)),
+  (_get, set, next: SavedQuery[]) => set(savedQueriesRawAtom, next),
 );
 
 /** The server every API call currently goes to. */

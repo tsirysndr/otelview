@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Command } from "cmdk";
-import { useAtom, useSetAtom } from "jotai";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   IconAlignLeft,
@@ -14,6 +14,7 @@ import {
   IconRoute,
   IconSearch,
   IconServer,
+  IconBookmark,
   IconServer2,
   IconSettings,
   IconX,
@@ -32,6 +33,7 @@ import {
   selectedSpanIdAtom,
   themeAtom,
   traceFiltersAtom,
+  savedQueriesAtom,
   viewAtom,
 } from "../../state/atoms";
 import { api } from "../../lib/api";
@@ -40,6 +42,7 @@ import { bodyPreview, fmtAgo, fmtDuration, severityInfo } from "../../lib/format
 import { serviceColor } from "../../lib/colors";
 import { describeTarget } from "../../lib/profiles";
 import { useServerProfiles } from "../../hooks/useProfiles";
+import { KIND_LABEL, searchSaved } from "../../lib/savedQueries";
 
 // Raycast-style global search ("/" or ⌘K): fuzzy commands + live search over
 // services, operations, metrics and traces. cmdk filters the static entries;
@@ -62,6 +65,7 @@ export function CommandPalette() {
   const setLookback = useSetAtom(lookbackAtom);
   const qc = useQueryClient();
   const { profiles, active, switchTo } = useServerProfiles();
+  const savedQueries = useAtomValue(savedQueriesAtom);
 
   useEffect(() => {
     if (!open) setSearch("");
@@ -102,6 +106,22 @@ export function CommandPalette() {
     setOpen(false);
     fn();
   };
+  const applySaved = (kind: string, query: string) =>
+    run(() => {
+      if (kind === "logs.kql") {
+        setView("logs");
+        setLogFilters({ ...logFilters, search: query });
+        return;
+      }
+      setOpenTrace(null);
+      setView("traces");
+      setTraceFilters(
+        kind === "traces.traceql"
+          ? { ...traceFilters, mode: "traceql", traceql: query }
+          : { ...traceFilters, mode: "attributes", q: query },
+      );
+    });
+
   const openTrace = (id: string) =>
     run(() => {
       setView("traces");
@@ -304,6 +324,27 @@ export function CommandPalette() {
               </Command.Item>
             ))}
           </Command.Group>
+
+          {savedQueries.length > 0 && (
+            <Command.Group heading="Saved queries" className={GROUP}>
+              {searchSaved(savedQueries, q).map((sq) => (
+                <Command.Item
+                  key={sq.id}
+                  value={`saved ${sq.name} ${sq.query} ${KIND_LABEL[sq.kind]}`}
+                  onSelect={() => applySaved(sq.kind, sq.query)}
+                  className={ITEM}
+                >
+                  <span className="text-neon-yellow">
+                    <IconBookmark size={16} />
+                  </span>
+                  <span className="min-w-0 flex-1 truncate">{sq.name}</span>
+                  <span className="shrink-0 font-mono text-[10px] text-default-400">
+                    {KIND_LABEL[sq.kind]}
+                  </span>
+                </Command.Item>
+              ))}
+            </Command.Group>
+          )}
 
           {profiles.length > 1 && (
             <Command.Group heading="Servers" className={GROUP}>

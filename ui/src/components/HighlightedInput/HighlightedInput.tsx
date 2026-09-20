@@ -1,10 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAtom } from "jotai";
 import { RESET } from "jotai/utils";
-import { IconSearch, IconTrash, IconX } from "@tabler/icons-react";
+import {
+  IconBookmark,
+  IconBookmarkFilled,
+  IconSearch,
+  IconTrash,
+  IconX,
+} from "@tabler/icons-react";
 import { withAppliedQuery } from "../../lib/history";
 import { plainTextField } from "../../lib/inputProps";
-import { queryHistoryFamily } from "../../state/atoms";
+import {
+  findSaved,
+  removeSaved,
+  saveQuery,
+  savedFor,
+  type QueryKind,
+} from "../../lib/savedQueries";
+import { queryHistoryFamily, savedQueriesAtom } from "../../state/atoms";
 
 export interface HlToken {
   text: string;
@@ -40,6 +53,7 @@ export function HighlightedInput({
   placeholder,
   ariaLabel,
   historyKey,
+  savedKind,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -51,6 +65,8 @@ export function HighlightedInput({
   /** Persist applied queries under this key and offer them back when the
    * input is focused empty. Omit for inputs with nothing worth recalling. */
   historyKey?: string;
+  /** Which signal saved queries belong to. Omit to hide saving entirely. */
+  savedKind?: QueryKind;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const preRef = useRef<HTMLPreElement>(null);
@@ -73,21 +89,52 @@ export function HighlightedInput({
 
   const clearAllHistory = () => setHistory(RESET);
 
+  const [allSaved, setAllSaved] = useAtom(savedQueriesAtom);
+  const saved = useMemo(
+    () => (savedKind ? savedFor(allSaved, savedKind) : []),
+    [allSaved, savedKind],
+  );
+  const savedHere = savedKind ? findSaved(allSaved, savedKind, value) : undefined;
+  // Naming happens inline rather than in a modal — the query is right there
+  // and a dialog for one text field would be heavier than the task.
+  const [naming, setNaming] = useState<string | null>(null);
+
+  const commitSave = () => {
+    if (!savedKind || naming === null) return;
+    setAllSaved(saveQuery(allSaved, { name: naming, kind: savedKind, query: value }));
+    setNaming(null);
+  };
+
   const tokens = useMemo(() => renderTokens(value), [renderTokens, value]);
   const { from, items } = useMemo(() => {
     if (!open) return { from: 0, items: [] };
     const trimmed = value.trim();
+    const lower = trimmed.toLowerCase();
+    const hit = (s: string) => trimmed === "" || s.toLowerCase().includes(lower);
+    // Saved queries lead: they were named on purpose, so they outrank both
+    // the automatic history and the grammar's completions.
+    const savedItems: Suggestion[] = saved
+      .filter((s) => s.query !== value && (hit(s.query) || hit(s.name)))
+      .map((s) => ({
+        label: s.name,
+        detail: "saved",
+        insert: s.query,
+        replaceAll: true,
+      }));
     // Recent exact queries that match what's typed so far, offered as
     // full-value replacements ahead of the grammar's own completions.
     const historyItems: Suggestion[] = history
-      .filter((q) => q !== value && (trimmed === "" || q.toLowerCase().includes(trimmed.toLowerCase())))
+      .filter((q) => q !== value && hit(q) && !saved.some((s) => s.query === q))
       .map((q) => ({ label: q, detail: "recent", insert: q, replaceAll: true }));
-    // An empty focused input offers only the recent queries; anything typed
-    // adds the grammar's own completions alongside matching history.
-    if (trimmed === "") return { from: 0, items: historyItems };
+    // An empty focused input offers only what it can recall; anything typed
+    // adds the grammar's own completions alongside those.
+    if (trimmed === "") return { from: 0, items: [...savedItems, ...historyItems] };
     const grammar = suggest(value, cursor);
-    return { from: grammar.from, items: [...historyItems, ...grammar.items] };
-  }, [open, suggest, value, cursor, history]);
+    return {
+      from: grammar.from,
+      items: [...savedItems, ...historyItems, ...grammar.items],
+    };
+  }, [open, suggest, value, cursor, history, saved]);
 
   useEffect(() => setSelected(0), [items.length, from]);
 
@@ -197,6 +244,31 @@ export function HighlightedInput({
             }}
           />
         </div>
+        {savedKind && value.trim() !== "" && (
+          <button
+            type="button"
+            aria-label={savedHere ? "Unsave query" : "Save query"}
+            title={savedHere ? `Saved as "${savedHere.name}" — click to remove` : "Save this query"}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              if (savedHere) {
+                setAllSaved(removeSaved(allSaved, savedHere.id));
+                return;
+              }
+              // Prefill with the query text: naming is optional, and Enter
+              // straight away is a perfectly good outcome.
+              setNaming(value.trim());
+              setOpen(true);
+            }}
+            className={`shrink-0 rounded p-0.5 transition-colors ${
+              savedHere
+                ? "text-neon-yellow"
+                : "text-default-400 hover:text-foreground"
+            }`}
+          >
+            {savedHere ? <IconBookmarkFilled size={14} /> : <IconBookmark size={14} />}
+          </button>
+        )}
         {value !== "" && (
           <button
             type="button"
@@ -215,7 +287,38 @@ export function HighlightedInput({
         )}
       </div>
 
-      {open && (items.length > 0 || (historyKey && history.length > 0)) && (
+      {naming !== null && (
+        <div className="absolute left-0 top-9 z-50 flex w-80 max-w-full items-center gap-1 rounded-large border border-content3 bg-content1 p-1.5">
+          <input
+            {...plainTextField}
+            autoFocus
+            aria-label="Name for the saved query"
+            placeholder="name this query"
+            value={naming}
+            onChange={(e) => setNaming(e.target.value)}
+            onKeyDown={(e) => {
+              e.stopPropagation();
+              if (e.key === "Enter") commitSave();
+              if (e.key === "Escape") setNaming(null);
+            }}
+            onBlur={() => setNaming(null)}
+            className="min-w-0 flex-1 rounded bg-content2 px-2 py-1 text-xs text-foreground outline-none placeholder:text-default-400"
+          />
+          <button
+            type="button"
+            aria-label="Confirm save"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              commitSave();
+            }}
+            className="shrink-0 rounded px-2 py-1 text-[11px] text-neon-cyan hover:bg-content2"
+          >
+            save
+          </button>
+        </div>
+      )}
+
+      {naming === null && open && (items.length > 0 || (historyKey && history.length > 0)) && (
         <>
           {/* Mobile and tablet get a bottom sheet with a dismiss scrim — an
               absolutely-positioned 320px dropdown doesn't work with an

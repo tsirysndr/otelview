@@ -1,5 +1,6 @@
 import { useCallback } from "react";
 import type { FieldInfo } from "../../lib/api";
+import type { QueryKind } from "../../lib/savedQueries";
 import {
   HighlightedInput,
   type HlToken,
@@ -128,6 +129,7 @@ export function KqlInput({
   invalid,
   placeholder,
   historyKey,
+  savedKind,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -135,6 +137,7 @@ export function KqlInput({
   invalid?: boolean;
   placeholder?: string;
   historyKey?: string;
+  savedKind?: QueryKind;
 }) {
   const renderTokens = useCallback(
     (v: string): HlToken[] =>
@@ -155,6 +158,7 @@ export function KqlInput({
       placeholder={placeholder}
       ariaLabel="KQL query"
       historyKey={historyKey}
+      savedKind={savedKind}
     />
   );
 }

@@ -131,6 +131,7 @@ function TraceList() {
           {traceqlMode ? (
             <TraceQlInput
               historyKey="traces.traceql"
+              savedKind="traces.traceql"
               value={filters.traceql}
               onChange={(traceql) => setFilters({ ...filters, traceql })}
               fields={attrFields}
@@ -140,6 +141,7 @@ function TraceList() {
           ) : (
             <AttrInput
               historyKey="traces.attributes"
+              savedKind="traces.attributes"
               value={filters.q}
               onChange={(q) => setFilters({ ...filters, q })}
               fields={attrFields}

@@ -1,5 +1,6 @@
 import { useCallback } from "react";
 import type { FieldInfo } from "../../lib/api";
+import type { QueryKind } from "../../lib/savedQueries";
 import {
   HighlightedInput,
   type HlToken,
@@ -14,12 +15,14 @@ export function AttrInput({
   fields,
   placeholder,
   historyKey,
+  savedKind,
 }: {
   value: string;
   onChange: (v: string) => void;
   fields: FieldInfo[];
   placeholder?: string;
   historyKey?: string;
+  savedKind?: QueryKind;
 }) {
   const renderTokens = useCallback((v: string): HlToken[] => {
     const eq = v.indexOf("=");
@@ -78,6 +81,7 @@ export function AttrInput({
       placeholder={placeholder}
       ariaLabel="Attribute filter"
       historyKey={historyKey}
+      savedKind={savedKind}
     />
   );
 }

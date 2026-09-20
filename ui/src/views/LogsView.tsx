@@ -120,6 +120,7 @@ export function LogsView() {
         <Field label="query (KQL)" className="min-w-72 flex-1">
           <KqlInput
             historyKey="logs.kql"
+            savedKind="logs.kql"
             value={filters.search}
             onChange={(search) => setFilters({ ...filters, search })}
             fields={fields}

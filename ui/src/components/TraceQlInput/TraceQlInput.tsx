@@ -1,5 +1,6 @@
 import { useCallback } from "react";
 import type { FieldInfo } from "../../lib/api";
+import type { QueryKind } from "../../lib/savedQueries";
 import {
   HighlightedInput,
   type HlToken,
@@ -277,6 +278,7 @@ export function TraceQlInput({
   invalid,
   placeholder,
   historyKey,
+  savedKind,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -284,6 +286,7 @@ export function TraceQlInput({
   invalid?: boolean;
   placeholder?: string;
   historyKey?: string;
+  savedKind?: QueryKind;
 }) {
   const renderTokens = useCallback(
     (v: string): HlToken[] =>
@@ -304,6 +307,7 @@ export function TraceQlInput({
       placeholder={placeholder}
       ariaLabel="TraceQL query"
       historyKey={historyKey}
+      savedKind={savedKind}
     />
   );
 }
