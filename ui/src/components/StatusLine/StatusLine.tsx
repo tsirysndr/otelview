@@ -10,7 +10,7 @@ export function StatusLine() {
   });
 
   return (
-    <footer className="flex h-6 shrink-0 items-center gap-4 border-t border-divider bg-[#171530] px-3 text-[11px] text-default-500">
+    <footer className="hidden h-6 shrink-0 items-center gap-4 border-t border-divider bg-[#171530] px-3 text-[11px] text-default-500 lg:flex">
       <span className="flex items-center gap-1.5">
         <span
           className={`inline-block h-2 w-2 rounded-full ${
