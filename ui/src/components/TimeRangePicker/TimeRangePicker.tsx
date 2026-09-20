@@ -1,37 +1,37 @@
 import { useEffect, useRef, useState } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@heroui/react";
 import { IconCalendar, IconX } from "@tabler/icons-react";
 import { useAtom } from "jotai";
+import dayjs from "dayjs";
 import { DayPicker, type DateRange } from "react-day-picker";
 import "react-day-picker/style.css";
 import { customRangeAtom, lookbackAtom } from "../../state/atoms";
+import { timeRangeSchema, type TimeRangeForm } from "../../lib/schemas";
 import { plainTextField } from "../../lib/inputProps";
 
 const LOOKBACKS = ["5m", "15m", "1h", "6h", "24h", "7d", "all"];
 
-function fmtRange(from: number, to: number): string {
-  const opts: Intl.DateTimeFormatOptions = {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  };
-  return `${new Date(from).toLocaleString([], opts)} → ${new Date(to).toLocaleString([], opts)}`;
-}
+const STAMP = "MMM D, HH:mm";
 
-function parseTime(s: string): { h: number; m: number } | null {
-  const m = /^(\d{1,2}):(\d{2})$/.exec(s.trim());
-  if (!m) return null;
-  const h = Number(m[1]);
-  const min = Number(m[2]);
-  if (h > 23 || min > 59) return null;
-  return { h, m: min };
+function fmtRange(from: number, to: number): string {
+  return `${dayjs(from).format(STAMP)} → ${dayjs(to).format(STAMP)}`;
 }
 
 function fmtTimeOf(ms: number): string {
-  const d = new Date(ms);
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  return dayjs(ms).format("HH:mm");
+}
+
+/** Combine a day from the calendar with an HH:MM typed into a time field.
+ * The schema has already checked the shape, so the split is safe here. */
+function at(day: Date, hhmm: string, endOfMinute: boolean): dayjs.Dayjs {
+  const [h, m] = hhmm.trim().split(":").map(Number);
+  return dayjs(day)
+    .hour(h)
+    .minute(m)
+    .second(endOfMinute ? 59 : 0)
+    .millisecond(endOfMinute ? 999 : 0);
 }
 
 const TIME_INPUT =
@@ -45,21 +45,30 @@ export function TimeRangePicker({ align = "right" }: { align?: "left" | "right" 
   const [custom, setCustom] = useAtom(customRangeAtom);
   const [open, setOpen] = useState(false);
   const [range, setRange] = useState<DateRange | undefined>();
-  const [fromTime, setFromTime] = useState("00:00");
-  const [toTime, setToTime] = useState("23:59");
   const [error, setError] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors },
+  } = useForm<TimeRangeForm>({
+    resolver: zodResolver(timeRangeSchema),
+    defaultValues: { fromTime: "00:00", toTime: "23:59" },
+    // Validate as you type. With onBlur the error only cleared when the
+    // field lost focus — which is the same event as reaching for Save, so
+    // the message vanished, the layout shifted, and the click was swallowed.
+    mode: "onChange",
+  });
 
   const openPanel = () => {
     if (custom) {
       setRange({ from: new Date(custom.from), to: new Date(custom.to) });
-      setFromTime(fmtTimeOf(custom.from));
-      setToTime(fmtTimeOf(custom.to));
+      reset({ fromTime: fmtTimeOf(custom.from), toTime: fmtTimeOf(custom.to) });
     } else {
       const now = new Date();
       setRange({ from: now, to: now });
-      setFromTime("00:00");
-      setToTime("23:59");
+      reset({ fromTime: "00:00", toTime: "23:59" });
     }
     setError(null);
     setOpen(true);
@@ -81,21 +90,21 @@ export function TimeRangePicker({ align = "right" }: { align?: "left" | "right" 
     };
   }, [open]);
 
-  const apply = () => {
+  // The calendar is not a form field, so the day range is still checked here;
+  // the time fields are validated by the schema before this runs.
+  const apply = handleSubmit(({ fromTime, toTime }) => {
     const fromDay = range?.from;
     const toDay = range?.to ?? range?.from;
     if (!fromDay || !toDay) return setError("pick a day range");
-    const ft = parseTime(fromTime);
-    const tt = parseTime(toTime);
-    if (!ft || !tt) return setError("times must be HH:MM");
-    const from = new Date(fromDay);
-    from.setHours(ft.h, ft.m, 0, 0);
-    const to = new Date(toDay);
-    to.setHours(tt.h, tt.m, 59, 999);
-    if (from.getTime() >= to.getTime()) return setError("start must be before end");
-    setCustom({ from: from.getTime(), to: to.getTime() });
+    const from = at(fromDay, fromTime, false);
+    const to = at(toDay, toTime, true);
+    if (!from.isBefore(to)) {
+      return setError("that range is empty — pick a later end day");
+    }
+    setError(null);
+    setCustom({ from: from.valueOf(), to: to.valueOf() });
     setOpen(false);
-  };
+  });
 
   return (
     <div ref={ref} className="relative flex items-center gap-1">
@@ -169,31 +178,41 @@ export function TimeRangePicker({ align = "right" }: { align?: "left" | "right" 
               from
               <input
                 {...plainTextField}
-                value={fromTime}
-                onChange={(e) => setFromTime(e.target.value)}
                 placeholder="00:00"
                 aria-label="Start time"
-                className={TIME_INPUT}
+                aria-invalid={!!errors.fromTime}
+                className={`${TIME_INPUT} ${errors.fromTime ? "border-danger" : ""}`}
+                {...register("fromTime")}
               />
             </label>
             <label className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-default-500">
               to
               <input
                 {...plainTextField}
-                value={toTime}
-                onChange={(e) => setToTime(e.target.value)}
                 placeholder="23:59"
                 aria-label="End time"
-                className={TIME_INPUT}
+                aria-invalid={!!errors.toTime}
+                className={`${TIME_INPUT} ${errors.toTime ? "border-danger" : ""}`}
+                {...register("toTime")}
               />
             </label>
           </div>
-          {error && <p className="text-[11px] text-danger">{error}</p>}
+          {(errors.fromTime || errors.toTime || error) && (
+            <p className="text-[11px] text-danger">
+              {errors.fromTime?.message ?? errors.toTime?.message ?? error}
+            </p>
+          )}
           <div className="flex justify-end gap-2">
             <Button size="sm" variant="light" radius="sm" onPress={() => setOpen(false)}>
               cancel
             </Button>
-            <Button size="sm" color="secondary" variant="flat" radius="sm" onPress={apply}>
+            <Button
+              size="sm"
+              color="secondary"
+              variant="flat"
+              radius="sm"
+              onPress={() => void apply()}
+            >
               apply
             </Button>
           </div>

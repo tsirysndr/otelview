@@ -7,8 +7,11 @@ import {
   IconTrash,
 } from "@tabler/icons-react";
 import { useState } from "react";
+import { Controller, useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { fieldProps, plainTextField } from "../lib/inputProps";
 import { describeTarget, newProfileId, type ServerProfile } from "../lib/profiles";
+import { serverProfileSchema, type ServerProfileForm } from "../lib/schemas";
 import { useServerProfiles } from "../hooks/useProfiles";
 import { Field } from "../components/Field";
 
@@ -41,39 +44,56 @@ function ProfileEditor({
   onRemove: () => void;
   onUse: () => void;
 }) {
-  const [draft, setDraft] = useState(profile);
   const [status, setStatus] = useState<string | null>(null);
-  const dirty =
-    draft.name !== profile.name ||
-    draft.baseUrl !== profile.baseUrl ||
-    draft.token !== profile.token;
+  const {
+    control,
+    handleSubmit,
+    getValues,
+    formState: { errors, isDirty },
+  } = useForm<ServerProfileForm>({
+    resolver: zodResolver(serverProfileSchema),
+    defaultValues: {
+      name: profile.name,
+      baseUrl: profile.baseUrl,
+      token: profile.token,
+    },
+    // Validate as you type. With onBlur the error only cleared when the
+    // field lost focus — which is the same event as reaching for Save, so
+    // the message vanished, the layout shifted, and the click was swallowed.
+    mode: "onChange",
+  });
 
-  const save = () => {
-    onSave({
-      ...draft,
-      name: draft.name.trim() || "unnamed",
-      baseUrl: draft.baseUrl.trim(),
-      token: draft.token.trim(),
-    });
+  const save = handleSubmit((values) => {
+    onSave({ ...profile, ...values });
     setStatus("saved ✓");
     setTimeout(() => setStatus(null), 2000);
-  };
+  });
 
   return (
-    <div
+    <form
+      onSubmit={save}
       className={`flex flex-col gap-3 rounded-lg border p-3 ${
         isActive ? "border-neon-cyan/60 bg-content1" : "border-divider"
       }`}
     >
       <div className="flex items-center gap-2">
         <Field label="name" className="flex-1">
-          <Input
-            {...plainTextField}
-            {...fieldProps}
-            aria-label={`Profile name for ${profile.name}`}
-            placeholder="production"
-            value={draft.name}
-            onValueChange={(name) => setDraft({ ...draft, name })}
+          <Controller
+            name="name"
+            control={control}
+            render={({ field }) => (
+              <Input
+                {...plainTextField}
+                {...fieldProps}
+                aria-label={`Profile name for ${profile.name}`}
+                placeholder="production"
+                isInvalid={!!errors.name}
+                errorMessage={errors.name?.message}
+                value={field.value}
+                onValueChange={field.onChange}
+                onBlur={field.onBlur}
+              />
+            )}
           />
         </Field>
         {isActive ? (
@@ -82,6 +102,7 @@ function ProfileEditor({
           </span>
         ) : (
           <Button
+            type="button"
             className="mt-4 shrink-0"
             size="sm"
             variant="flat"
@@ -93,49 +114,71 @@ function ProfileEditor({
         )}
       </div>
       <Field label="API base URL">
-        <Input
-          {...plainTextField}
-          {...fieldProps}
-          aria-label={`API base URL for ${profile.name}`}
-          placeholder="http://127.0.0.1:4319 (empty = same origin)"
-          value={draft.baseUrl}
-          onValueChange={(baseUrl) => setDraft({ ...draft, baseUrl })}
+        <Controller
+          name="baseUrl"
+          control={control}
+          render={({ field }) => (
+            <Input
+              {...plainTextField}
+              {...fieldProps}
+              aria-label={`API base URL for ${profile.name}`}
+              placeholder="http://127.0.0.1:4319 (empty = same origin)"
+              isInvalid={!!errors.baseUrl}
+              errorMessage={errors.baseUrl?.message}
+              value={field.value}
+              onValueChange={field.onChange}
+              onBlur={field.onBlur}
+            />
+          )}
         />
       </Field>
       <Field label="API token">
-        <Input
-          {...plainTextField}
-          {...fieldProps}
-          aria-label={`API token for ${profile.name}`}
-          placeholder="only if auth.protect_api is enabled"
-          type="password"
-          value={draft.token}
-          onValueChange={(token) => setDraft({ ...draft, token })}
+        <Controller
+          name="token"
+          control={control}
+          render={({ field }) => (
+            <Input
+              {...plainTextField}
+              {...fieldProps}
+              aria-label={`API token for ${profile.name}`}
+              placeholder="only if auth.protect_api is enabled"
+              type="password"
+              isInvalid={!!errors.token}
+              errorMessage={errors.token?.message}
+              value={field.value}
+              onValueChange={field.onChange}
+              onBlur={field.onBlur}
+            />
+          )}
         />
       </Field>
       <div className="flex items-center gap-2">
         <Button
+          type="submit"
           color="primary"
           size="sm"
-          isDisabled={!dirty}
+          isDisabled={!isDirty}
           startContent={<IconDeviceFloppy size={15} />}
-          onPress={save}
         >
           save
         </Button>
         <Button
+          type="button"
           variant="flat"
           size="sm"
           startContent={<IconPlugConnected size={15} />}
           onPress={async () => {
             setStatus("testing…");
-            setStatus(await probe(draft));
+            // Probe exactly what is on screen, so a URL can be checked
+            // before it is committed to the profile.
+            setStatus(await probe({ ...profile, ...getValues() }));
           }}
         >
           test connection
         </Button>
         {canRemove && (
           <Button
+            type="button"
             variant="light"
             size="sm"
             color="danger"
@@ -148,7 +191,7 @@ function ProfileEditor({
         )}
         {status && <span className="text-xs text-default-500">{status}</span>}
       </div>
-    </div>
+    </form>
   );
 }
 

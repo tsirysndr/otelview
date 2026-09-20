@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { Controller, useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { Button, Input } from "@heroui/react";
 import { IconLock } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { api, ApiError } from "../../lib/api";
 import { useServerProfiles } from "../../hooks/useProfiles";
 import { fieldProps, plainTextField } from "../../lib/inputProps";
+import { accessTokenSchema, type AccessTokenForm } from "../../lib/schemas";
 import { Field } from "../Field";
 
 /** Blocks the workspace behind a token prompt when the server requires one
@@ -12,7 +14,15 @@ import { Field } from "../Field";
  * gated server-side — this screen just collects the token. */
 export function AuthGate({ children }: { children: React.ReactNode }) {
   const { active, save } = useServerProfiles();
-  const [token, setToken] = useState("");
+  const {
+    control,
+    handleSubmit,
+    formState: { errors, isValid },
+  } = useForm<AccessTokenForm>({
+    resolver: zodResolver(accessTokenSchema),
+    defaultValues: { token: "" },
+    mode: "onChange",
+  });
 
   const { error, isLoading } = useQuery({
     queryKey: ["auth-check", active.id, active.token],
@@ -24,7 +34,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   if (!unauthorized) return <>{children}</>;
 
   // Unlocking re-tokens the profile we are already pointed at.
-  const submit = () => save({ ...active, token: token.trim() });
+  const submit = handleSubmit(({ token }) => save({ ...active, token }));
 
   return (
     <div className="flex h-full flex-col items-center justify-center gap-4 p-6">
@@ -37,27 +47,30 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
           this instance requires an access token
         </p>
       </div>
-      <form
-        className="flex w-72 flex-col gap-3"
-        onSubmit={(e) => {
-          e.preventDefault();
-          submit();
-        }}
-      >
+      <form className="flex w-72 flex-col gap-3" onSubmit={submit}>
         <Field label="access token">
-          <Input
-            {...plainTextField}
-            {...fieldProps}
-            size="md"
-            autoFocus
-            type="password"
-            aria-label="Access token"
-            placeholder="paste the ui token"
-            value={token}
-            onValueChange={setToken}
+          <Controller
+            name="token"
+            control={control}
+            render={({ field }) => (
+              <Input
+                {...plainTextField}
+                {...fieldProps}
+                size="md"
+                autoFocus
+                type="password"
+                aria-label="Access token"
+                placeholder="paste the ui token"
+                isInvalid={!!errors.token}
+                errorMessage={errors.token?.message}
+                value={field.value}
+                onValueChange={field.onChange}
+                onBlur={field.onBlur}
+              />
+            )}
           />
         </Field>
-        <Button type="submit" color="primary" size="sm" isDisabled={!token.trim()}>
+        <Button type="submit" color="primary" size="sm" isDisabled={!isValid}>
           unlock
         </Button>
         {active.token && (

@@ -19,6 +19,7 @@ import {
   themeAtom,
 } from "../../state/atoms";
 import { isMac, isTauri, switchClassNames } from "../../lib/inputProps";
+import { ServerSwitcher } from "../ServerSwitcher";
 import { TimeRangePicker } from "../TimeRangePicker";
 
 export function TopBar() {
@@ -53,6 +54,8 @@ export function TopBar() {
       </span>
 
       <div data-tauri-drag-region className="flex-1" />
+
+      <ServerSwitcher />
 
       {/* Global time range */}
       <TimeRangePicker />
