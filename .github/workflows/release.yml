@@ -98,18 +98,6 @@ jobs:
             echo "Gemfury secrets not set; skipping package upload"
           fi
 
-      - name: Push deb and rpm to Gemfury
-        if: runner.os == 'Linux' && steps.gemfury.outputs.available == 'true'
-        env:
-          FURY_TOKEN: ${{ secrets.FURY_TOKEN }}
-          FURY_ACCOUNT: ${{ secrets.FURY_ACCOUNT }}
-        run: |
-          for package in dist/*.deb dist/*.rpm; do
-            curl -fsS -F package=@"$package" \
-              "https://${FURY_TOKEN}@push.fury.io/${FURY_ACCOUNT}/"
-            echo
-          done
-
       - name: Upload to release
         uses: softprops/action-gh-release@v2
         with:
@@ -119,6 +107,35 @@ jobs:
             ${{ env.ASSET }}.sha256
             dist/*
           generate_release_notes: true
+      - name: Push deb and rpm to Gemfury
+        if: runner.os == 'Linux' && steps.gemfury.outputs.available == 'true'
+        env:
+          FURY_TOKEN: ${{ secrets.FURY_TOKEN }}
+          FURY_ACCOUNT: ${{ secrets.FURY_ACCOUNT }}
+        run: |
+          # Gemfury answers 409 when this exact package version is already
+          # there — which is what every re-run of this job sees, since the
+          # first attempt's uploads stuck. Already-published is success for a
+          # release pipeline, not failure.
+          push_package() {
+            local package=$1 status
+            status=$(curl -sS -o /tmp/fury-response -w "%{http_code}" \
+              -F package=@"$package" \
+              "https://${FURY_TOKEN}@push.fury.io/${FURY_ACCOUNT}/")
+            case "$status" in
+              2*) echo "uploaded $(basename "$package")" ;;
+              409) echo "$(basename "$package") already on Gemfury; skipping" ;;
+              *)
+                echo "upload of $(basename "$package") failed with HTTP $status:" >&2
+                cat /tmp/fury-response >&2
+                return 1
+                ;;
+            esac
+          }
+          for package in dist/*.deb dist/*.rpm; do
+            push_package "$package"
+          done
+
 
   desktop:
     name: desktop ${{ matrix.platform }}
@@ -195,22 +212,39 @@ jobs:
             echo "Gemfury secrets not set; skipping package upload"
           fi
 
-      - name: Push desktop deb and rpm to Gemfury
-        if: runner.os == 'Linux' && steps.gemfury.outputs.available == 'true'
-        env:
-          FURY_TOKEN: ${{ secrets.FURY_TOKEN }}
-          FURY_ACCOUNT: ${{ secrets.FURY_ACCOUNT }}
-        run: |
-          BUNDLE=ui/src-tauri/target/release/bundle
-          for package in "$BUNDLE"/deb/*.deb "$BUNDLE"/rpm/*.rpm; do
-            curl -fsS -F package=@"$package" \
-              "https://${FURY_TOKEN}@push.fury.io/${FURY_ACCOUNT}/"
-            echo
-          done
-
       - name: Upload to release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           files: out/*
           generate_release_notes: true
+      - name: Push desktop deb and rpm to Gemfury
+        if: runner.os == 'Linux' && steps.gemfury.outputs.available == 'true'
+        env:
+          FURY_TOKEN: ${{ secrets.FURY_TOKEN }}
+          FURY_ACCOUNT: ${{ secrets.FURY_ACCOUNT }}
+        run: |
+          # Gemfury answers 409 when this exact package version is already
+          # there — which is what every re-run of this job sees, since the
+          # first attempt's uploads stuck. Already-published is success for a
+          # release pipeline, not failure.
+          push_package() {
+            local package=$1 status
+            status=$(curl -sS -o /tmp/fury-response -w "%{http_code}" \
+              -F package=@"$package" \
+              "https://${FURY_TOKEN}@push.fury.io/${FURY_ACCOUNT}/")
+            case "$status" in
+              2*) echo "uploaded $(basename "$package")" ;;
+              409) echo "$(basename "$package") already on Gemfury; skipping" ;;
+              *)
+                echo "upload of $(basename "$package") failed with HTTP $status:" >&2
+                cat /tmp/fury-response >&2
+                return 1
+                ;;
+            esac
+          }
+          BUNDLE=ui/src-tauri/target/release/bundle
+          for package in "$BUNDLE"/deb/*.deb "$BUNDLE"/rpm/*.rpm; do
+            push_package "$package"
+          done
+
