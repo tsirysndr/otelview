@@ -89,10 +89,13 @@
             '';
             outputHashAlgo = "sha256";
             outputHashMode = "recursive";
-            # NAR hash of the sandbox-built dist. After UI changes, re-run
-            # the nix workflow and paste the "got:" hash from the mismatch
-            # error (the local `nix hash path ui/dist` can differ slightly).
-            outputHash = "sha256-aPX1SyGee8BgcPV9UHnVoAoJHn4LFWe9faGtdB36t+I=";
+            # NAR hash of the sandbox-built dist. It tracks every change
+            # under ui/ since it was last set, not just the current commit —
+            # so it goes stale as soon as any UI source moves, and a release
+            # that only bumps versions can still need a new one. Re-run the
+            # nix workflow and paste the "got:" hash from the mismatch error
+            # (the local `nix hash path ui/dist` can differ slightly).
+            outputHash = "sha256-HoaomDFQvVvuaygYQZV1RwgcHAls6+y//S3wEDdpMEg=";
           };
 
           # Keep proto files (tonic codegen inputs) alongside the cargo sources.
