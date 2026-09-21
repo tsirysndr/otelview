@@ -63,7 +63,7 @@
           # error.
           webui = pkgs.stdenvNoCC.mkDerivation {
             pname = "otelview-webui";
-            version = "0.1.4";
+            version = "0.2.0";
             src = lib.cleanSourceWith {
               src = ./ui;
               filter = path: type:
@@ -106,7 +106,7 @@
           commonArgs = {
             inherit src;
             pname = "otelview";
-            version = "0.1.4";
+            version = "0.2.0";
             strictDeps = true;
             nativeBuildInputs = [ pkgs.protobuf ];
             PROTOC = "${pkgs.protobuf}/bin/protoc";

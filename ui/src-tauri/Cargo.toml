@@ -1,6 +1,6 @@
 [package]
 name = "otelview-desktop"
-version = "0.1.4"
+version = "0.2.0"
 edition = "2021"
 license = "MIT"
 description = "otelview desktop — OpenTelemetry viewer connected to a remote otelview API"
