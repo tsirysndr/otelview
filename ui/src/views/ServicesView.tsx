@@ -76,7 +76,9 @@ export function ServicesView() {
   const maxP95 = Math.max(...stats.map((s) => s.p95_ms), 1);
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-y-auto">
+    // The filter stays put and the content scrolls under it: pinning it is
+    // the point of a filter over a long list, and it was scrolling away.
+    <div className="flex h-full min-h-0 flex-col">
       <SearchBox
         value={filter}
         onChange={setFilter}
@@ -86,6 +88,7 @@ export function ServicesView() {
         total={stats.length}
       />
 
+      <div className="min-h-0 flex-1 overflow-y-auto">
       {graph && graph.nodes.length > 0 && (
         <div className="shrink-0 border-b border-divider">
           <div className="flex items-baseline justify-between px-3 pt-2">
@@ -208,6 +211,7 @@ export function ServicesView() {
           computed from up to 250 recent traces in the selected window · requests =
           server/root spans · click a row for its traces, or the icons for its logs and metrics
         </p>
+      </div>
       </div>
     </div>
   );
