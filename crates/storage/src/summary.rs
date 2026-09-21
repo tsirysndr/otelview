@@ -33,7 +33,7 @@ pub fn collect_exemplar_hits<'a>(
             });
         }
     }
-    hits.sort_by(|a, b| b.exemplar.time_unix_nano.cmp(&a.exemplar.time_unix_nano));
+    hits.sort_by_key(|h| std::cmp::Reverse(h.exemplar.time_unix_nano));
     if limit > 0 {
         hits.truncate(limit);
     }

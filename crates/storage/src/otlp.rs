@@ -558,7 +558,7 @@ fn exemplars_json(
             })
         })
         .collect();
-    (!out.is_empty()).then(|| Value::Array(out))
+    (!out.is_empty()).then_some(Value::Array(out))
 }
 
 /// Attach exemplars to a point's `extra`, preserving whatever the metric
