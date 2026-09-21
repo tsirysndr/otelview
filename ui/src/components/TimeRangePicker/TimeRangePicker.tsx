@@ -24,6 +24,8 @@ export function TimeRangePicker() {
   // Sticky while editing, so clearing the range does not yank the control
   // out from under the user mid-edit.
   const [picking, setPicking] = useState(false);
+  // The calendar opens with the picker: one click on the icon, not two.
+  const [calendarOpen, setCalendarOpen] = useState(false);
 
   // Entering custom mode carries the window already on screen across as an
   // absolute range. That keeps what is displayed identical at the moment of
@@ -32,6 +34,7 @@ export function TimeRangePicker() {
   const startPicking = () => {
     setCustom(lookbackToRange(lookback, Date.now()));
     setPicking(true);
+    setCalendarOpen(true);
   };
 
   if (custom !== null || picking) {
@@ -40,12 +43,18 @@ export function TimeRangePicker() {
         <Suspense
           fallback={<div className="h-7 w-72 animate-pulse rounded-medium bg-content2" />}
         >
-          <CustomRangePicker value={custom} onChange={setCustom} />
+          <CustomRangePicker
+            value={custom}
+            onChange={setCustom}
+            isOpen={calendarOpen}
+            onOpenChange={setCalendarOpen}
+          />
         </Suspense>
         <button
           onClick={() => {
             setCustom(null);
             setPicking(false);
+            setCalendarOpen(false);
           }}
           aria-label="Clear custom range"
           title="Back to quick ranges"

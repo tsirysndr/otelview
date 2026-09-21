@@ -26,13 +26,21 @@ export interface Range {
 export default function CustomRangePicker({
   value,
   onChange,
+  isOpen,
+  onOpenChange,
 }: {
   value: Range | null;
   onChange: (r: Range | null) => void;
+  /** Controlled so the calendar can be shown the moment the bar switches
+   * into custom mode, rather than needing a second click on the field. */
+  isOpen?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
   return (
     <DateRangePicker
       aria-label="Custom time range"
+      isOpen={isOpen}
+      onOpenChange={onOpenChange}
       size="sm"
       variant="flat"
       granularity="minute"

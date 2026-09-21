@@ -35,5 +35,9 @@ describe("top bar overflow", () => {
     expect(
       screen.getByRole("button", { name: "Clear custom range" }),
     ).toBeInTheDocument();
+
+    // One click, not two: the calendar comes up with the field rather than
+    // waiting for a second click on the field's own trigger.
+    expect(await screen.findByRole("application")).toBeInTheDocument();
   });
 });
