@@ -3,6 +3,7 @@ import { IconCalendar, IconX } from "@tabler/icons-react";
 import { useAtom } from "jotai";
 import { customRangeAtom, lookbackAtom } from "../../state/atoms";
 import { lookbackToRange } from "../../lib/lookback";
+import type { Range } from "./CustomRangePicker";
 
 // HeroUI's date stack is large and most sessions never leave the quick
 // lookbacks, so it is fetched only when the custom picker is opened.
@@ -26,15 +27,25 @@ export function TimeRangePicker() {
   const [picking, setPicking] = useState(false);
   // The calendar opens with the picker: one click on the icon, not two.
   const [calendarOpen, setCalendarOpen] = useState(false);
+  // What the picker shows before anything is committed. Opening the picker
+  // must not touch customRangeAtom: that atom feeds every time-scoped query
+  // key, so writing to it refetches the whole view just to show a calendar.
+  // The draft carries the window already on screen — identical to what is
+  // displayed, and complete enough that picking days does not also demand
+  // typing both times — without asking the server for any of it again.
+  const [draft, setDraft] = useState<Range | null>(null);
 
-  // Entering custom mode carries the window already on screen across as an
-  // absolute range. That keeps what is displayed identical at the moment of
-  // the switch, and — because granularity is minute — hands the picker a
-  // complete value, so choosing days does not also demand typing both times.
   const startPicking = () => {
-    setCustom(lookbackToRange(lookback, Date.now()));
+    setDraft(lookbackToRange(lookback, Date.now()));
     setPicking(true);
     setCalendarOpen(true);
+  };
+
+  // Only a real edit commits, and that refetch is the one the user asked
+  // for by changing the range.
+  const commit = (r: Range | null) => {
+    setDraft(r);
+    setCustom(r);
   };
 
   if (custom !== null || picking) {
@@ -44,8 +55,8 @@ export function TimeRangePicker() {
           fallback={<div className="h-7 w-72 animate-pulse rounded-medium bg-content2" />}
         >
           <CustomRangePicker
-            value={custom}
-            onChange={setCustom}
+            value={custom ?? draft}
+            onChange={commit}
             isOpen={calendarOpen}
             onOpenChange={setCalendarOpen}
           />
@@ -53,6 +64,7 @@ export function TimeRangePicker() {
         <button
           onClick={() => {
             setCustom(null);
+            setDraft(null);
             setPicking(false);
             setCalendarOpen(false);
           }}
@@ -73,6 +85,7 @@ export function TimeRangePicker() {
           key={lb}
           onClick={() => {
             setCustom(null);
+            setDraft(null);
             setLookback(lb);
           }}
           className={`rounded-md px-2 py-0.5 text-xs transition-colors ${
