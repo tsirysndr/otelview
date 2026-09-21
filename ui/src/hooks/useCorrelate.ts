@@ -63,8 +63,10 @@ export function useCorrelate() {
         traceId,
         spanId: opts?.spanId ?? "",
         // A trace is already a narrow slice; carrying a text query over from
-        // the previous search would only hide rows.
+        // the previous search would only hide rows. Both languages get
+        // cleared, not just the active one — the mode survives the jump.
         search: "",
+        lucene: "",
         minSeverity: 0,
         service: "",
       }));
@@ -99,6 +101,7 @@ export function useCorrelate() {
         traceId: "",
         spanId: "",
         search: "",
+        lucene: "",
       }));
       setView("logs");
     },

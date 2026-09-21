@@ -95,6 +95,83 @@ describe("filter wiring", () => {
     expect(traceCalls.at(-1)!.get("traceql")).toBeNull();
   });
 
+  it("the lucene mode sends lucene and drops the other queries", async () => {
+    renderApp(<TracesView />);
+    await waitFor(() => expect(traceCalls.length).toBeGreaterThan(0));
+
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "Attribute filter" }),
+      "http.method=GET",
+    );
+    await waitFor(() => expect(traceCalls.at(-1)!.get("q")).toBe("http.method=GET"));
+
+    await userEvent.click(screen.getByRole("button", { name: "lucene" }));
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "Lucene query" }),
+      "service:gateway",
+    );
+    await waitFor(() =>
+      expect(traceCalls.at(-1)!.get("lucene")).toBe("service:gateway"),
+    );
+    // Exactly one language reaches the API at a time.
+    expect(traceCalls.at(-1)!.get("q")).toBeNull();
+    expect(traceCalls.at(-1)!.get("traceql")).toBeNull();
+
+    // Each mode keeps its own text, so switching back and forth is lossless.
+    await userEvent.click(screen.getByRole("button", { name: "attributes" }));
+    await waitFor(() => expect(traceCalls.at(-1)!.get("q")).toBe("http.method=GET"));
+    expect(traceCalls.at(-1)!.get("lucene")).toBeNull();
+
+    await userEvent.click(screen.getByRole("button", { name: "lucene" }));
+    expect(screen.getByRole("textbox", { name: "Lucene query" })).toHaveValue(
+      "service:gateway",
+    );
+  });
+
+  it("the logs lucene mode sends lucene instead of kql", async () => {
+    renderApp(<LogsView />);
+    await waitFor(() => expect(logCalls.length).toBeGreaterThan(0));
+
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "KQL query" }),
+      "http.method:POST",
+    );
+    await waitFor(() => expect(logCalls.at(-1)!.get("kql")).toBe("http.method:POST"));
+
+    await userEvent.click(screen.getByRole("button", { name: "lucene" }));
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "Lucene query" }),
+      "level:ERROR",
+    );
+    await waitFor(() => expect(logCalls.at(-1)!.get("lucene")).toBe("level:ERROR"));
+    expect(logCalls.at(-1)!.get("kql")).toBeNull();
+
+    await userEvent.click(screen.getByRole("button", { name: "kql" }));
+    await waitFor(() => expect(logCalls.at(-1)!.get("kql")).toBe("http.method:POST"));
+    expect(logCalls.at(-1)!.get("lucene")).toBeNull();
+  });
+
+  it("surfaces a Lucene parse error from the API", async () => {
+    server.use(
+      http.get("/api/logs", ({ request }) => {
+        const url = new URL(request.url);
+        logCalls.push(url.searchParams);
+        if (url.searchParams.get("lucene")) {
+          return new HttpResponse("invalid Lucene query: unbalanced ')'", {
+            status: 400,
+          });
+        }
+        return HttpResponse.json(logFixtures);
+      }),
+    );
+    renderApp(<LogsView />);
+    await waitFor(() => expect(logCalls.length).toBeGreaterThan(0));
+
+    await userEvent.click(screen.getByRole("button", { name: "lucene" }));
+    await userEvent.type(screen.getByRole("textbox", { name: "Lucene query" }), "a)");
+    expect(await screen.findByText(/invalid Lucene query/)).toBeInTheDocument();
+  });
+
   it("surfaces a TraceQL parse error from the API", async () => {
     server.use(
       http.get("/api/traces", ({ request }) => {

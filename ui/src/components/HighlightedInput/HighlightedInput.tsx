@@ -126,10 +126,14 @@ export function HighlightedInput({
     const historyItems: Suggestion[] = history
       .filter((q) => q !== value && hit(q) && !saved.some((s) => s.query === q))
       .map((q) => ({ label: q, detail: "recent", insert: q, replaceAll: true }));
-    // An empty focused input offers only what it can recall; anything typed
-    // adds the grammar's own completions alongside those.
-    if (trimmed === "") return { from: 0, items: [...savedItems, ...historyItems] };
+    // What the input can recall leads; the grammar's own completions follow.
+    // The empty case is the one that matters most: TraceQL and Lucene answer
+    // it with starter queries, which is the only place their punctuation is
+    // ever shown, so skipping the grammar here left them undiscoverable.
     const grammar = suggest(value, cursor);
+    if (trimmed === "") {
+      return { from: 0, items: [...savedItems, ...historyItems, ...grammar.items] };
+    }
     return {
       from: grammar.from,
       items: [...savedItems, ...historyItems, ...grammar.items],

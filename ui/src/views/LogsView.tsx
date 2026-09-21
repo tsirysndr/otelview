@@ -14,6 +14,7 @@ import {
   logFiltersAtom,
   selectedLogAtom,
 } from "../state/atoms";
+import type { LogFilters, LogQueryMode } from "../state/atoms";
 import { useState } from "react";
 import { useTimeParams } from "../hooks/useTimeParams";
 import { useCorrelate } from "../hooks/useCorrelate";
@@ -22,6 +23,7 @@ import { bodyPreview, fmtTime, severityInfo } from "../lib/format";
 import { EmptyState } from "../components/EmptyState";
 import { Field } from "../components/Field";
 import { KqlInput } from "../components/KqlInput";
+import { LuceneInput } from "../components/LuceneInput";
 import { SearchBox } from "../components/SearchBox";
 import { matches } from "../lib/search";
 import { LogHistogram } from "../components/LogHistogram";
@@ -41,8 +43,23 @@ const SEVERITIES = [
   { key: "17", label: "error +" },
 ];
 
+/** What each query mode is for, on hover. Both filter the same records;
+ * which you reach for is a matter of which syntax you already know. */
+const MODE_HINT: Record<LogQueryMode, string> = {
+  kql: "KQL — e.g. http.method:POST and status_code:>=500",
+  lucene: 'Lucene — e.g. level:ERROR AND "connection refused"',
+};
+
 function logKey(l: LogRecord, i: number) {
   return `${l.time_unix_nano}-${l.span_id}-${i}`;
+}
+
+/** Only the active language reaches the API, so switching modes never
+ * leaves the other one's filter quietly applied. */
+function queryParam(f: LogFilters): { kql?: string; lucene?: string } {
+  return f.mode === "lucene"
+    ? { lucene: f.lucene || undefined }
+    : { kql: f.search || undefined };
 }
 
 export function LogsView() {
@@ -66,7 +83,7 @@ export function LogsView() {
       api.logHistogram({
         service: filters.service || undefined,
         min_severity: filters.minSeverity || undefined,
-        kql: filters.search || undefined,
+        ...queryParam(filters),
         trace_id: filters.traceId || undefined,
         ...timeParams,
         buckets: 60,
@@ -81,7 +98,7 @@ export function LogsView() {
       api.logs({
         service: filters.service || undefined,
         min_severity: filters.minSeverity || undefined,
-        kql: filters.search || undefined,
+        ...queryParam(filters),
         trace_id: filters.traceId || undefined,
         ...timeParams,
         limit: filters.limit,
@@ -116,7 +133,14 @@ export function LogsView() {
 
   const shownFields = fields.filter((f) => matches(f.name, fieldFilter));
 
+  // The fields sidebar hands back a `key:value` clause, which both languages
+  // spell the same way — only the conjunction differs.
   const addToQuery = (clause: string) => {
+    if (filters.mode === "lucene") {
+      const q = filters.lucene.trim();
+      setFilters({ ...filters, lucene: q ? `${q} AND ${clause}` : clause });
+      return;
+    }
     const q = filters.search.trim();
     setFilters({ ...filters, search: q ? `${q} and ${clause}` : clause });
   };
@@ -143,17 +167,52 @@ export function LogsView() {
             options={SEVERITIES.map((s) => ({ value: s.key, label: s.label }))}
           />
         </Field>
-        <Field label="query (KQL)" className="min-w-72 flex-1">
-          <KqlInput
-            historyKey="logs.kql"
-            savedKind="logs.kql"
-            value={filters.search}
-            onChange={(search) => setFilters({ ...filters, search })}
-            fields={fields}
-            invalid={!!kqlError}
-            placeholder='http.method:POST and status_code:>=500 · body:"card declined"'
-          />
-        </Field>
+        <div className="flex min-w-72 flex-1 flex-col gap-0.5">
+          <div className="flex items-center gap-2 px-0.5">
+            <span className="text-[10px] uppercase tracking-wide text-default-500">
+              query
+            </span>
+            <div className="flex items-center gap-0.5 rounded bg-content2 p-0.5">
+              {(["kql", "lucene"] as const).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setFilters({ ...filters, mode: m })}
+                  aria-pressed={filters.mode === m}
+                  title={MODE_HINT[m]}
+                  className={`rounded px-1.5 text-[10px] transition-colors ${
+                    filters.mode === m
+                      ? "bg-content4 text-foreground"
+                      : "text-default-500 hover:text-foreground"
+                  }`}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
+          </div>
+          {filters.mode === "lucene" ? (
+            <LuceneInput
+              historyKey="logs.lucene"
+              savedKind="logs.lucene"
+              value={filters.lucene}
+              onChange={(lucene) => setFilters({ ...filters, lucene })}
+              fields={fields}
+              signal="logs"
+              invalid={!!kqlError}
+              placeholder='level:ERROR AND "card declined" · http.status_code:[500 TO *]'
+            />
+          ) : (
+            <KqlInput
+              historyKey="logs.kql"
+              savedKind="logs.kql"
+              value={filters.search}
+              onChange={(search) => setFilters({ ...filters, search })}
+              fields={fields}
+              invalid={!!kqlError}
+              placeholder='http.method:POST and status_code:>=500 · body:"card declined"'
+            />
+          )}
+        </div>
         <button
           onClick={() => setFieldsOpen(!fieldsOpen)}
           aria-label="Toggle fields sidebar"

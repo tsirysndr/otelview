@@ -64,7 +64,7 @@ export const customRangeAtom = atom<{ from: number; to: number } | null>(null);
 export const liveAtom = atomWithStorage<boolean>("otelview.live", true);
 
 /** Trace search filters (jotai-global so they survive view switches). */
-export type TraceQueryMode = "attributes" | "traceql";
+export type TraceQueryMode = "attributes" | "traceql" | "lucene";
 
 export interface TraceFilters {
   service: string;
@@ -72,7 +72,9 @@ export interface TraceFilters {
   q: string;
   /** TraceQL source, used when `mode` is "traceql". */
   traceql: string;
-  /** Which of `q` / `traceql` the filter bar is editing and sending. */
+  /** Lucene source, used when `mode` is "lucene". */
+  lucene: string;
+  /** Which of the three sources the filter bar is editing and sending. */
   mode: TraceQueryMode;
   minDurationMs: string;
   errorsOnly: boolean;
@@ -83,6 +85,7 @@ export const traceFiltersAtom = atom<TraceFilters>({
   operation: "",
   q: "",
   traceql: "",
+  lucene: "",
   mode: "attributes",
   minDurationMs: "",
   errorsOnly: false,
@@ -90,10 +93,17 @@ export const traceFiltersAtom = atom<TraceFilters>({
 });
 
 /** Log search filters. */
+/** Which query language the logs filter bar is editing and sending. */
+export type LogQueryMode = "kql" | "lucene";
+
 export interface LogFilters {
   service: string;
   minSeverity: number;
+  /** KQL source, used when `mode` is "kql". */
   search: string;
+  /** Lucene source, used when `mode` is "lucene". */
+  lucene: string;
+  mode: LogQueryMode;
   /** Set when following a trace: narrows logs to that trace (and span). */
   traceId: string;
   spanId: string;
@@ -103,6 +113,8 @@ export const logFiltersAtom = atom<LogFilters>({
   service: "",
   minSeverity: 0,
   search: "",
+  lucene: "",
+  mode: "kql",
   traceId: "",
   spanId: "",
   limit: 300,

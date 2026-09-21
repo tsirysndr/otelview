@@ -23,6 +23,49 @@ function Harness({ historyKey }: { historyKey?: string }) {
   );
 }
 
+/** Same harness, but with a grammar that answers the empty input — the case
+ * TraceQL and Lucene use for their starter queries. */
+function TemplateHarness() {
+  const [value, setValue] = useState("");
+  return (
+    <Provider store={createStore()}>
+      <HighlightedInput
+        value={value}
+        onChange={setValue}
+        renderTokens={(v) => [{ text: v, className: "" }]}
+        suggest={() => ({
+          from: 0,
+          items: [{ label: "{ status = error }", insert: "{ status = error }" }],
+        })}
+        ariaLabel="test query"
+        historyKey="tpl"
+      />
+    </Provider>
+  );
+}
+
+describe("empty-input suggestions", () => {
+  beforeEach(() => localStorage.clear());
+
+  // The grammar's starter queries are the only place a language's syntax is
+  // ever shown, so an empty box must reach the grammar, not just history.
+  it("offers the grammar's starters when there is nothing to recall", () => {
+    render(<TemplateHarness />);
+    fireEvent.focus(screen.getByLabelText("test query"));
+    expect(screen.getByText("{ status = error }")).toBeInTheDocument();
+  });
+
+  it("puts recalled queries ahead of the starters", () => {
+    localStorage.setItem("otelview.history.tpl", JSON.stringify(["{ kind = server }"]));
+    render(<TemplateHarness />);
+    fireEvent.focus(screen.getByLabelText("test query"));
+    const recalled = screen.getByText("{ kind = server }");
+    const starter = screen.getByText("{ status = error }");
+    // Node.DOCUMENT_POSITION_FOLLOWING — the starter comes after the recall.
+    expect(recalled.compareDocumentPosition(starter) & 4).toBeTruthy();
+  });
+});
+
 describe("query history merge", () => {
   it("dedupes to the front and caps", () => {
     let history: string[] = [];

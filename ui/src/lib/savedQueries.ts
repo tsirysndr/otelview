@@ -4,7 +4,12 @@
  * Stored browser-side for now. Ids and `createdAt` exist so a future sync
  * layer has something stable to merge on. */
 
-export type QueryKind = "traces.attributes" | "traces.traceql" | "logs.kql";
+export type QueryKind =
+  | "traces.attributes"
+  | "traces.traceql"
+  | "traces.lucene"
+  | "logs.kql"
+  | "logs.lucene";
 
 export interface SavedQuery {
   id: string;
@@ -22,7 +27,9 @@ export const SAVED_LIMIT = 100;
 export const KIND_LABEL: Record<QueryKind, string> = {
   "traces.attributes": "traces",
   "traces.traceql": "traceql",
+  "traces.lucene": "traces · lucene",
   "logs.kql": "logs",
+  "logs.lucene": "logs · lucene",
 };
 
 export function newQueryId(): string {
@@ -33,7 +40,13 @@ export function newQueryId(): string {
 }
 
 function isKind(v: unknown): v is QueryKind {
-  return v === "traces.attributes" || v === "traces.traceql" || v === "logs.kql";
+  return (
+    v === "traces.attributes" ||
+    v === "traces.traceql" ||
+    v === "traces.lucene" ||
+    v === "logs.kql" ||
+    v === "logs.lucene"
+  );
 }
 
 /** Tolerate anything in storage; drop entries that are not usable. */

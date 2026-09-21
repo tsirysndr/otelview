@@ -8,6 +8,7 @@ import {
   selectedSpanIdAtom,
   traceFiltersAtom,
 } from "../state/atoms";
+import type { TraceQueryMode } from "../state/atoms";
 import { fieldProps, plainTextField, switchClassNames } from "../lib/inputProps";
 import { useTimeParams } from "../hooks/useTimeParams";
 import { useCorrelate } from "../hooks/useCorrelate";
@@ -16,6 +17,7 @@ import { fmtAgo, fmtDuration } from "../lib/format";
 import { serviceNeon } from "../lib/colors";
 import { AttrInput } from "../components/AttrInput";
 import { TraceQlInput } from "../components/TraceQlInput";
+import { LuceneInput } from "../components/LuceneInput";
 import { EmptyState } from "../components/EmptyState";
 import { Field } from "../components/Field";
 import { FilterAutocomplete } from "../components/FilterAutocomplete";
@@ -23,6 +25,15 @@ import { ScatterPlot } from "../components/ScatterPlot";
 import { ServiceChip } from "../components/ServiceChip";
 import { SkeletonRows, SkeletonWaterfall } from "../components/Skeleton";
 import { Waterfall } from "../components/Waterfall";
+
+/** What each query mode is for, on hover. TraceQL and Lucene both answer
+ * "which traces", but from different directions: TraceQL predicates on the
+ * spanset, Lucene keeps a trace when any one span matches. */
+const MODE_HINT: Record<TraceQueryMode, string> = {
+  attributes: "Simple attribute match — key=value or any text",
+  traceql: "TraceQL — e.g. { status = error && duration > 100ms }",
+  lucene: "Lucene — e.g. service:gateway AND http.status_code:[500 TO *]",
+};
 
 function TraceList() {
   const [filters, setFilters] = useAtom(traceFiltersAtom);
@@ -46,7 +57,6 @@ function TraceList() {
     refetchInterval: live ? 10_000 : false,
   });
 
-  const traceqlMode = filters.mode === "traceql";
 
   const { data: traces = [], isLoading, error } = useQuery({
     queryKey: ["traces", filters, timeParams],
@@ -54,10 +64,11 @@ function TraceList() {
       api.traces({
         service: filters.service || undefined,
         operation: filters.operation || undefined,
-        // The two query modes are mutually exclusive: only the active one is
+        // The query modes are mutually exclusive: only the active one is
         // sent, so switching modes never leaves a stale filter applied.
-        q: traceqlMode ? undefined : filters.q || undefined,
-        traceql: traceqlMode ? filters.traceql || undefined : undefined,
+        q: filters.mode === "attributes" ? filters.q || undefined : undefined,
+        traceql: filters.mode === "traceql" ? filters.traceql || undefined : undefined,
+        lucene: filters.mode === "lucene" ? filters.lucene || undefined : undefined,
         min_duration_ms: filters.minDurationMs ? Number(filters.minDurationMs) : undefined,
         errors_only: filters.errorsOnly || undefined,
         ...timeParams,
@@ -108,16 +119,12 @@ function TraceList() {
               query
             </span>
             <div className="flex items-center gap-0.5 rounded bg-content2 p-0.5">
-              {(["attributes", "traceql"] as const).map((m) => (
+              {(["attributes", "traceql", "lucene"] as const).map((m) => (
                 <button
                   key={m}
                   onClick={() => setFilters({ ...filters, mode: m })}
                   aria-pressed={filters.mode === m}
-                  title={
-                    m === "traceql"
-                      ? "TraceQL — e.g. { status = error && duration > 100ms }"
-                      : "Simple attribute match — key=value or any text"
-                  }
+                  title={MODE_HINT[m]}
                   className={`rounded px-1.5 text-[10px] transition-colors ${
                     filters.mode === m
                       ? "bg-content4 text-foreground"
@@ -129,7 +136,7 @@ function TraceList() {
               ))}
             </div>
           </div>
-          {traceqlMode ? (
+          {filters.mode === "traceql" && (
             <TraceQlInput
               historyKey="traces.traceql"
               savedKind="traces.traceql"
@@ -139,7 +146,20 @@ function TraceList() {
               invalid={!!queryError}
               placeholder="{ status = error && duration > 100ms }"
             />
-          ) : (
+          )}
+          {filters.mode === "lucene" && (
+            <LuceneInput
+              historyKey="traces.lucene"
+              savedKind="traces.lucene"
+              value={filters.lucene}
+              onChange={(lucene) => setFilters({ ...filters, lucene })}
+              fields={attrFields}
+              signal="traces"
+              invalid={!!queryError}
+              placeholder='service:gateway AND http.status_code:[500 TO *]'
+            />
+          )}
+          {filters.mode === "attributes" && (
             <AttrInput
               historyKey="traces.attributes"
               savedKind="traces.attributes"

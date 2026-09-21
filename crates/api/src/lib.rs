@@ -12,7 +12,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
 use otelview_config::Config;
-use otelview_model::{LogQuery, MetricQuery, TraceQuery};
+use otelview_model::{LogQuery, LogRecord, MetricQuery, SpanRecord, TraceQuery};
 use otelview_storage::DynStorage;
 use rust_embed::RustEmbed;
 use serde::Deserialize;
@@ -20,6 +20,7 @@ use tower_http::cors::CorsLayer;
 
 pub mod analytics;
 pub mod kql;
+pub mod lucene;
 pub mod seriesfns;
 pub mod traceql;
 
@@ -175,6 +176,88 @@ async fn operations(State(state): State<ApiState>, Query(p): Query<ServiceParams
 /// request can do; matching stops as soon as `limit` traces are found.
 const TRACEQL_SCAN_LIMIT: usize = 200;
 
+/// A log query in whichever language the request named.
+///
+/// Both parse to an AST and evaluate as a Rust predicate over fetched
+/// records rather than lowering to SQL, so either works over every storage
+/// backend and they can share one code path here.
+enum LogFilter {
+    Kql(kql::Expr),
+    Lucene(lucene::Query),
+}
+
+impl LogFilter {
+    /// `None` when neither param carries a query. KQL wins if a request
+    /// somehow sends both; the UI only ever sends the mode you are in.
+    fn parse(kql_q: Option<&str>, lucene_q: Option<&str>) -> Result<Option<Self>, String> {
+        if let Some(q) = nonempty(kql_q) {
+            return match kql::parse(q) {
+                Ok(expr) => Ok(expr.map(LogFilter::Kql)),
+                Err(e) => Err(bad_query("KQL", &e)),
+            };
+        }
+        if let Some(q) = nonempty(lucene_q) {
+            return match lucene::parse(q) {
+                Ok(expr) => Ok(expr.map(LogFilter::Lucene)),
+                Err(e) => Err(bad_query("Lucene", &e)),
+            };
+        }
+        Ok(None)
+    }
+
+    fn matches(&self, log: &LogRecord) -> bool {
+        match self {
+            LogFilter::Kql(expr) => kql::eval(expr, log),
+            LogFilter::Lucene(q) => lucene::eval(q, log),
+        }
+    }
+}
+
+/// A trace query in whichever language the request named.
+///
+/// TraceQL predicates on the spanset, so it sees the whole trace at once.
+/// Lucene has no notion of a spanset, so a trace matches when any single
+/// span does — the same rule a user gets from the logs view.
+enum TraceFilter {
+    TraceQl(traceql::Expr),
+    Lucene(lucene::Query),
+}
+
+impl TraceFilter {
+    fn parse(traceql_q: Option<&str>, lucene_q: Option<&str>) -> Result<Option<Self>, String> {
+        if let Some(q) = nonempty(traceql_q) {
+            return match traceql::parse(q) {
+                Ok(expr) => Ok(expr.map(TraceFilter::TraceQl)),
+                Err(e) => Err(bad_query("TraceQL", &e)),
+            };
+        }
+        if let Some(q) = nonempty(lucene_q) {
+            return match lucene::parse(q) {
+                Ok(expr) => Ok(expr.map(TraceFilter::Lucene)),
+                Err(e) => Err(bad_query("Lucene", &e)),
+            };
+        }
+        Ok(None)
+    }
+
+    fn matches(&self, spans: &[SpanRecord]) -> bool {
+        match self {
+            TraceFilter::TraceQl(expr) => traceql::eval(expr, spans),
+            TraceFilter::Lucene(q) => spans.iter().any(|s| lucene::eval(q, s)),
+        }
+    }
+}
+
+fn nonempty(s: Option<&str>) -> Option<&str> {
+    s.map(str::trim).filter(|s| !s.is_empty())
+}
+
+/// The parse-failure message, phrased so the user can see which language
+/// rejected what they typed.
+fn bad_query(lang: &str, err: &str) -> String {
+    format!("invalid {lang} query: {err}")
+}
+
 #[derive(Deserialize)]
 struct TraceParams {
     service: Option<String>,
@@ -183,6 +266,8 @@ struct TraceParams {
     q: Option<String>,
     /// TraceQL query, e.g. `{ status = error && duration > 100ms }`.
     traceql: Option<String>,
+    /// Lucene query, e.g. `service:gateway AND http.status_code:[500 TO *]`.
+    lucene: Option<String>,
     /// Minimum span duration in milliseconds.
     min_duration_ms: Option<f64>,
     max_duration_ms: Option<f64>,
@@ -203,15 +288,9 @@ async fn traces(State(state): State<ApiState>, Query(p): Query<TraceParams>) -> 
             .map(|window| now_unix_nanos().saturating_sub(window))
     });
     let start_time_max_unix_nano = p.end_ms.map(|ms| ms * 1_000_000);
-    let traceql_expr = match p.traceql.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
-        Some(q) => match traceql::parse(q) {
-            Ok(expr) => expr,
-            Err(e) => {
-                return (StatusCode::BAD_REQUEST, format!("invalid TraceQL query: {e}"))
-                    .into_response()
-            }
-        },
-        None => None,
+    let filter = match TraceFilter::parse(p.traceql.as_deref(), p.lucene.as_deref()) {
+        Ok(f) => f,
+        Err(msg) => return (StatusCode::BAD_REQUEST, msg).into_response(),
     };
     let limit = p.limit.unwrap_or(20).clamp(1, 500);
     let q = TraceQuery {
@@ -223,9 +302,9 @@ async fn traces(State(state): State<ApiState>, Query(p): Query<TraceParams>) -> 
         start_time_min_unix_nano,
         start_time_max_unix_nano,
         errors_only: p.errors_only.unwrap_or(false),
-        // TraceQL needs a candidate pool to filter down from, since it
-        // predicates on spans the summary does not carry.
-        limit: match traceql_expr {
+        // A span-level query needs a candidate pool to filter down from,
+        // since it predicates on spans the summary does not carry.
+        limit: match filter {
             Some(_) => TRACEQL_SCAN_LIMIT.max(limit),
             None => limit,
         },
@@ -234,7 +313,7 @@ async fn traces(State(state): State<ApiState>, Query(p): Query<TraceParams>) -> 
         Ok(t) => t,
         Err(e) => return internal(e),
     };
-    let Some(expr) = traceql_expr else {
+    let Some(filter) = filter else {
         return Json(candidates).into_response();
     };
     // Summaries come back newest-first, so taking the first `limit` matches
@@ -243,7 +322,7 @@ async fn traces(State(state): State<ApiState>, Query(p): Query<TraceParams>) -> 
     for summary in candidates {
         match state.storage.get_trace(&summary.trace_id).await {
             Ok(spans) => {
-                if traceql::eval(&expr, &spans) {
+                if filter.matches(&spans) {
                     out.push(summary);
                     if out.len() >= limit {
                         break;
@@ -299,6 +378,8 @@ struct LogParams {
     search: Option<String>,
     /// KQL query, e.g. `http.method:POST and status_code:>=500`.
     kql: Option<String>,
+    /// Lucene query, e.g. `level:ERROR AND "connection refused"`.
+    lucene: Option<String>,
     trace_id: Option<String>,
     lookback: Option<String>,
     /// Absolute range (unix millis); overrides lookback when set.
@@ -315,14 +396,9 @@ async fn logs(State(state): State<ApiState>, Query(p): Query<LogParams>) -> Resp
             .map(|window| now_unix_nanos().saturating_sub(window))
     });
     let time_max_unix_nano = p.end_ms.map(|ms| ms * 1_000_000);
-    let kql_expr = match p.kql.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
-        Some(q) => match kql::parse(q) {
-            Ok(expr) => expr,
-            Err(e) => {
-                return (StatusCode::BAD_REQUEST, format!("invalid KQL query: {e}")).into_response()
-            }
-        },
-        None => None,
+    let filter = match LogFilter::parse(p.kql.as_deref(), p.lucene.as_deref()) {
+        Ok(f) => f,
+        Err(msg) => return (StatusCode::BAD_REQUEST, msg).into_response(),
     };
     let limit = p.limit.unwrap_or(200).clamp(1, 5000);
     let q = LogQuery {
@@ -332,13 +408,13 @@ async fn logs(State(state): State<ApiState>, Query(p): Query<LogParams>) -> Resp
         trace_id: p.trace_id.filter(|s| !s.is_empty()),
         time_min_unix_nano,
         time_max_unix_nano,
-        // With a KQL filter, over-fetch and filter down to the limit.
-        limit: if kql_expr.is_some() { 5000 } else { limit },
+        // With a query filter, over-fetch and filter down to the limit.
+        limit: if filter.is_some() { 5000 } else { limit },
     };
     match state.storage.query_logs(q).await {
         Ok(mut l) => {
-            if let Some(expr) = kql_expr {
-                l.retain(|log| kql::eval(&expr, log));
+            if let Some(filter) = filter {
+                l.retain(|log| filter.matches(log));
                 l.truncate(limit);
             }
             Json(l).into_response()
@@ -515,6 +591,7 @@ struct LogHistogramParams {
     min_severity: Option<i32>,
     search: Option<String>,
     kql: Option<String>,
+    lucene: Option<String>,
     lookback: Option<String>,
     start_ms: Option<u64>,
     end_ms: Option<u64>,
@@ -541,22 +618,20 @@ async fn log_histogram_handler(
         time_max_unix_nano: time_max,
         limit: 0,
     };
-    let kql_expr = match p.kql.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
-        Some(query) => match kql::parse(query) {
-            Ok(expr) => expr,
-            Err(e) => {
-                return (StatusCode::BAD_REQUEST, format!("invalid KQL query: {e}")).into_response()
-            }
-        },
-        None => None,
+    let filter = match LogFilter::parse(p.kql.as_deref(), p.lucene.as_deref()) {
+        Ok(f) => f,
+        Err(msg) => return (StatusCode::BAD_REQUEST, msg).into_response(),
     };
+    let predicate = filter.map(|f| move |l: &LogRecord| f.matches(l));
     match analytics::log_histogram(
         &state.storage,
         q,
         p.buckets.unwrap_or(40),
         time_min,
         time_max,
-        kql_expr.as_ref(),
+        predicate
+            .as_ref()
+            .map(|f| f as &(dyn Fn(&LogRecord) -> bool + Send + Sync)),
     )
     .await
     {
@@ -677,6 +752,17 @@ mod tests {
         let bytes = resp.into_body().collect().await.unwrap().to_bytes();
         let value = serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null);
         (status, value)
+    }
+
+    /// For the error paths, where the body is a plain message rather than JSON.
+    async fn get_text(app: Router, path: &str) -> (StatusCode, String) {
+        let resp = app
+            .oneshot(Request::get(path).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        let status = resp.status();
+        let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+        (status, String::from_utf8_lossy(&bytes).into_owned())
     }
 
     #[tokio::test]
@@ -1153,6 +1239,60 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn lucene_filters_traces() {
+        let (cfg, storage) = test_state();
+        let mut ok_root = span("t-ok", "gateway", 1_000);
+        ok_root.attributes = json!({"http.method": "GET", "http.status_code": 200});
+        let bad_root = span("t-bad", "gateway", 2_000);
+        let mut bad_child = span("t-bad", "payments", 2_000);
+        bad_child.span_id = "s2".into();
+        bad_child.name = "charge".into();
+        bad_child.status_code = 2;
+        bad_child.attributes = json!({"http.method": "POST", "http.status_code": 502});
+        storage
+            .insert_spans(vec![ok_root, bad_root, bad_child])
+            .await
+            .unwrap();
+        let app = router(&cfg, storage);
+
+        // A trace matches when any of its spans does, so a predicate on the
+        // child keeps the whole trace.
+        let (status, v) = get_json(app.clone(), "/api/traces?lucene=name%3Acharge").await;
+        assert_eq!(status, StatusCode::OK);
+        let got = v.as_array().unwrap();
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0]["trace_id"], "t-bad");
+
+        // Ranges over a numeric attribute.
+        let (status, v) = get_json(
+            app.clone(),
+            "/api/traces?lucene=http.status_code%3A%5B500%20TO%20*%5D",
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(v.as_array().unwrap().len(), 1);
+
+        // Boolean combination, and the catch-all that keeps both.
+        let (status, v) = get_json(
+            app.clone(),
+            "/api/traces?lucene=service%3Apayments%20OR%20http.method%3AGET",
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(v.as_array().unwrap().len(), 2);
+
+        // Malformed is a 400, named for the language that failed.
+        let (status, body) = get_text(app.clone(), "/api/traces?lucene=(bad").await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(body.contains("invalid Lucene query"), "{body}");
+
+        // Empty means no filter.
+        let (status, v) = get_json(app, "/api/traces?lucene=").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(v.as_array().unwrap().len(), 2);
+    }
+
+    #[tokio::test]
     async fn kql_filters_logs() {
         let (cfg, storage) = test_state();
         let mk = |sev: i32, method: &str, code: i64| otelview_model::LogRecord {
@@ -1189,6 +1329,37 @@ mod tests {
 
         let (status, _) = get_json(app.clone(), "/api/logs?kql=(bad").await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
+
+        // The same request in Lucene, over the same records.
+        let (status, v) = get_json(
+            app.clone(),
+            "/api/logs?lucene=http.method%3APOST%20AND%20http.status_code%3A%5B500%20TO%20*%5D",
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(v.as_array().unwrap().len(), 1);
+        assert_eq!(v[0]["severity_number"], 17);
+
+        // A bare term searches the whole record.
+        let (status, v) = get_json(app.clone(), "/api/logs?lucene=%22req%20done%22").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(v.as_array().unwrap().len(), 3);
+
+        // The histogram takes the same filter.
+        let (status, v) = get_json(app.clone(), "/api/logs/histogram?lucene=http.method%3AGET").await;
+        assert_eq!(status, StatusCode::OK);
+        // Buckets count per severity; only the one GET log survives.
+        let total: u64 = v
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|b| ["trace", "debug", "info", "warn", "error", "fatal"].map(|k| b[k].as_u64().unwrap()))
+            .sum();
+        assert_eq!(total, 1);
+
+        let (status, body) = get_text(app.clone(), "/api/logs?lucene=%22unterminated").await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(body.contains("invalid Lucene query"), "{body}");
 
         let (status, v) = get_json(app, "/api/logs/fields").await;
         assert_eq!(status, StatusCode::OK);

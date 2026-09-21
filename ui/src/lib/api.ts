@@ -126,6 +126,7 @@ export interface TraceSearchParams {
   operation?: string;
   q?: string;
   traceql?: string;
+  lucene?: string;
   min_duration_ms?: number;
   errors_only?: boolean;
   lookback?: string;
@@ -139,6 +140,7 @@ export interface LogSearchParams {
   min_severity?: number;
   search?: string;
   kql?: string;
+  lucene?: string;
   trace_id?: string;
   lookback?: string;
   start_ms?: number;

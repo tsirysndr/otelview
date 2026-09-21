@@ -8,7 +8,7 @@
 use std::collections::BTreeMap;
 
 use anyhow::Context;
-use otelview_model::{LogQuery, SpanRecord, TraceQuery};
+use otelview_model::{LogQuery, LogRecord, SpanRecord, TraceQuery};
 use otelview_storage::DynStorage;
 use serde::Serialize;
 
@@ -347,7 +347,9 @@ pub async fn log_histogram(
     buckets: usize,
     time_min: Option<u64>,
     time_max: Option<u64>,
-    kql: Option<&crate::kql::Expr>,
+    // Optional query predicate. Taken as a closure rather than a specific
+    // AST so KQL and Lucene share this path; both evaluate in Rust anyway.
+    matches: Option<&(dyn Fn(&LogRecord) -> bool + Send + Sync)>,
 ) -> anyhow::Result<Vec<LogBucket>> {
     // Only what bucketing needs, so the cap can be generous.
     let mut samples: Vec<(u64, i32)> = Vec::new();
@@ -368,7 +370,7 @@ pub async fn log_histogram(
             oldest = Some(oldest.map_or(l.time_unix_nano, |o: u64| o.min(l.time_unix_nano)));
         }
         for l in page {
-            if kql.is_none_or(|expr| crate::kql::eval(expr, &l)) {
+            if matches.is_none_or(|f| f(&l)) {
                 samples.push((l.time_unix_nano, l.severity_number));
             }
         }
