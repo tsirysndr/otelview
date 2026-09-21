@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { IconCalendar, IconX } from "@tabler/icons-react";
 import { useAtom } from "jotai";
 import dayjs from "dayjs";
@@ -9,6 +9,12 @@ import type { Range } from "./CustomRangePicker";
 // HeroUI's date stack is large and most sessions never leave the quick
 // lookbacks, so it is fetched only when the custom picker is opened.
 const CustomRangePicker = lazy(() => import("./CustomRangePicker"));
+
+/** Fetch the chunk before it is needed. Hovering the trigger is a good
+ * enough signal and costs nothing for anyone who never opens the picker;
+ * opening awaits the same promise, so a click that beats the hover still
+ * mounts the real thing rather than a placeholder. */
+const importPicker = () => import("./CustomRangePicker");
 
 const LOOKBACKS = ["5m", "15m", "1h", "6h", "24h", "7d", "all"];
 
@@ -46,12 +52,32 @@ export function TimeRangePicker() {
   // displayed, and complete enough that picking days does not also demand
   // typing both times — without asking the server for any of it again.
   const [draft, setDraft] = useState<Range | null>(null);
+  // The chunk is fetched before the picker is rendered, so the trigger needs
+  // to show that the click registered. Dimming it keeps the bar's layout
+  // still — a spinner or a placeholder row is what made this flicker.
+  const [loading, setLoading] = useState(false);
 
-  const openPicker = (seed: Range | null) => {
+  const openPicker = async (seed: Range | null) => {
     setDraft(seed);
+    // Swap in only once the chunk is in memory. Rendering first showed a
+    // placeholder until the 180 kB chunk arrived — on a cold load that is
+    // most of a second of pulsing grey, which is the flicker. Already
+    // resolved after a hover, so this is usually instant.
+    setLoading(true);
+    await importPicker();
+    setLoading(false);
     setPicking(true);
-    setCalendarOpen(true);
   };
+
+  // Open on the frame *after* the picker mounts. Opening in the same render
+  // positions the popover against a trigger that has not been laid out yet,
+  // so it appears offset and undersized and then jumps into place — the
+  // flicker. One frame later the field has its real geometry.
+  useEffect(() => {
+    if (!picking) return;
+    const id = requestAnimationFrame(() => setCalendarOpen(true));
+    return () => cancelAnimationFrame(id);
+  }, [picking]);
 
   const reset = () => {
     setCustom(null);
@@ -71,7 +97,9 @@ export function TimeRangePicker() {
     return (
       <div className="flex shrink-0 items-center gap-1">
         <Suspense
-          fallback={<div className="h-7 w-72 animate-pulse rounded-medium bg-content2" />}
+          // Reached only if the chunk is somehow not cached by now; sized
+          // like the field so the bar does not jump.
+          fallback={<div className="h-8 w-[21rem]" />}
         >
           <CustomRangePicker
             value={custom ?? draft}
@@ -101,6 +129,8 @@ export function TimeRangePicker() {
     return (
       <button
         onClick={() => openPicker(custom)}
+        onMouseEnter={importPicker}
+        onFocus={importPicker}
         aria-label={`Edit custom range: ${fmtRange(custom.from, custom.to)}`}
         className="flex shrink-0 items-center gap-1.5 rounded-lg bg-content2 px-2 py-1 text-xs text-neon-cyan"
         title="Custom time range — click to edit"
@@ -143,9 +173,13 @@ export function TimeRangePicker() {
       ))}
       <button
         onClick={() => openPicker(lookbackToRange(lookback, Date.now()))}
+        onMouseEnter={importPicker}
+        onFocus={importPicker}
         aria-label="Pick a custom time range"
         title="Custom time range"
-        className="rounded-md px-1.5 py-0.5 text-default-500 transition-colors hover:text-foreground"
+        className={`rounded-md px-1.5 py-0.5 transition-colors ${
+          loading ? "text-default-300" : "text-default-500 hover:text-foreground"
+        }`}
       >
         <IconCalendar size={14} />
       </button>

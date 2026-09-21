@@ -54,6 +54,9 @@ export default function CustomRangePicker({
       // Inline rather than a `hidden` class: the component supplies its own
       // display utility, which wins the cascade against Tailwind's.
       selectorButtonProps={{ style: isOpen ? { display: "none" } : undefined }}
+      // No scale-and-fade entrance: a popover this size grows visibly into
+      // place, which reads as a flicker rather than as motion.
+      popoverProps={{ disableAnimation: true }}
       value={value ? { start: toZoned(value.from), end: toZoned(value.to) } : null}
       onChange={(v) => {
         if (!v?.start || !v?.end) return onChange(null);

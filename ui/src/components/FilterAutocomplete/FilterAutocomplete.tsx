@@ -67,7 +67,12 @@ export function FilterAutocomplete({
           input: "text-xs",
         },
       }}
-      popoverProps={{ classNames: { content: "border border-content3 bg-content1" } }}
+      // Same as the range picker: the scale-in entrance reads as a flicker
+      // on a list this small, so the menu just appears.
+      popoverProps={{
+        disableAnimation: true,
+        classNames: { content: "border border-content3 bg-content1" },
+      }}
       listboxProps={{ itemClasses: { base: "text-xs data-[selected=true]:text-neon-cyan" } }}
     >
       {items.map((o) => (
