@@ -18,7 +18,7 @@ import { AttrInput } from "../components/AttrInput";
 import { TraceQlInput } from "../components/TraceQlInput";
 import { EmptyState } from "../components/EmptyState";
 import { Field } from "../components/Field";
-import { FilterSelect } from "../components/FilterSelect";
+import { FilterAutocomplete } from "../components/FilterAutocomplete";
 import { ScatterPlot } from "../components/ScatterPlot";
 import { ServiceChip } from "../components/ServiceChip";
 import { SkeletonRows, SkeletonWaterfall } from "../components/Skeleton";
@@ -81,7 +81,7 @@ function TraceList() {
       {/* filter bar */}
       <div className="flex shrink-0 flex-wrap items-end gap-2 border-b border-divider bg-content1 p-2">
         <Field label="service" className="w-44">
-          <FilterSelect
+          <FilterAutocomplete
             ariaLabel="Service"
             value={filters.service}
             onChange={(service) => setFilters({ ...filters, service, operation: "" })}
@@ -92,7 +92,7 @@ function TraceList() {
           />
         </Field>
         <Field label="operation" className="w-52">
-          <FilterSelect
+          <FilterAutocomplete
             ariaLabel="Operation"
             value={filters.operation}
             onChange={(operation) => setFilters({ ...filters, operation })}

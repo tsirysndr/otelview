@@ -15,6 +15,7 @@ import { IconChartLine } from "@tabler/icons-react";
 import { LineChart, type ChartSeries } from "../components/LineChart";
 import { EmptyState } from "../components/EmptyState";
 import { Field } from "../components/Field";
+import { FilterAutocomplete } from "../components/FilterAutocomplete";
 import { FilterSelect } from "../components/FilterSelect";
 import { SearchBox } from "../components/SearchBox";
 import { SkeletonChart, SkeletonList } from "../components/Skeleton";
@@ -178,7 +179,7 @@ export function MetricsView() {
                 />
               </Field>
               <Field label="service" className="w-44">
-                <FilterSelect
+                <FilterAutocomplete
                   ariaLabel="Service"
                   value={service}
                   onChange={setService}

@@ -44,8 +44,16 @@ export default function CustomRangePicker({
       size="sm"
       variant="flat"
       granularity="minute"
+      // Two months: a range usually spans a boundary, and paging back and
+      // forth to place the two ends is the main friction with one.
+      visibleMonths={2}
       hideTimeZone
       maxValue={now(zone())}
+      // The trigger has done its job once the calendar is up; leaving it
+      // there just offers a second way to toggle what is already open.
+      // Inline rather than a `hidden` class: the component supplies its own
+      // display utility, which wins the cascade against Tailwind's.
+      selectorButtonProps={{ style: isOpen ? { display: "none" } : undefined }}
       value={value ? { start: toZoned(value.from), end: toZoned(value.to) } : null}
       onChange={(v) => {
         if (!v?.start || !v?.end) return onChange(null);

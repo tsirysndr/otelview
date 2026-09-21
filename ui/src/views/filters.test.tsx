@@ -27,6 +27,12 @@ beforeEach(() => {
   );
 });
 
+/** Services and operations are autocompletes now: open, then choose. */
+async function pick(ariaLabel: string, option: string) {
+  await userEvent.click(screen.getByRole("combobox", { name: ariaLabel }));
+  await userEvent.click(await screen.findByRole("option", { name: option }));
+}
+
 describe("filter wiring", () => {
   it("severity select sends min_severity to the API", async () => {
     renderApp(<LogsView />);
@@ -45,10 +51,7 @@ describe("filter wiring", () => {
   it("log service select sends service to the API", async () => {
     renderApp(<LogsView />);
     await waitFor(() => expect(logCalls.length).toBeGreaterThan(0));
-    await userEvent.selectOptions(
-      screen.getByRole("combobox", { name: "Service" }),
-      "payments",
-    );
+    await pick("Service", "payments");
     await waitFor(() => expect(logCalls.at(-1)!.get("service")).toBe("payments"));
   });
 
@@ -120,10 +123,11 @@ describe("filter wiring", () => {
     renderApp(<TracesView />);
     await waitFor(() => expect(traceCalls.length).toBeGreaterThan(0));
 
-    await userEvent.selectOptions(
-      screen.getByRole("combobox", { name: "Service" }),
-      "frontend",
-    );
+    // Typing narrows the list — the reason these became autocompletes.
+    const box = screen.getByRole("combobox", { name: "Service" });
+    await userEvent.click(box);
+    await userEvent.type(box, "front");
+    await userEvent.click(await screen.findByRole("option", { name: "frontend" }));
     await waitFor(() => expect(traceCalls.at(-1)!.get("service")).toBe("frontend"));
 
     await userEvent.click(screen.getByRole("switch", { name: "Errors only" }));

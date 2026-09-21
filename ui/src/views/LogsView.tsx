@@ -14,6 +14,7 @@ import {
   logFiltersAtom,
   selectedLogAtom,
 } from "../state/atoms";
+import { useState } from "react";
 import { useTimeParams } from "../hooks/useTimeParams";
 import { useCorrelate } from "../hooks/useCorrelate";
 import { api, ApiError, type LogRecord } from "../lib/api";
@@ -21,8 +22,11 @@ import { bodyPreview, fmtTime, severityInfo } from "../lib/format";
 import { EmptyState } from "../components/EmptyState";
 import { Field } from "../components/Field";
 import { KqlInput } from "../components/KqlInput";
+import { SearchBox } from "../components/SearchBox";
+import { matches } from "../lib/search";
 import { LogHistogram } from "../components/LogHistogram";
 import { SkeletonHistogram, SkeletonRows } from "../components/Skeleton";
+import { FilterAutocomplete } from "../components/FilterAutocomplete";
 import { FilterSelect } from "../components/FilterSelect";
 import { ServiceChip } from "../components/ServiceChip";
 
@@ -50,6 +54,10 @@ export function LogsView() {
 
   const { data: services = [] } = useQuery({ queryKey: ["services"], queryFn: api.services });
   const [fieldsOpen, setFieldsOpen] = useAtom(logFieldsOpenAtom);
+  // The fields list is whatever the window happens to contain — dozens of
+  // attribute keys on a busy service. Client-side, like the other quick
+  // filters: the list already arrived with the response.
+  const [fieldFilter, setFieldFilter] = useState("");
   const correlate = useCorrelate();
 
   const { data: histogram = [], isLoading: histogramLoading } = useQuery({
@@ -106,6 +114,8 @@ export function LogsView() {
     refetchInterval: live ? 10_000 : false,
   });
 
+  const shownFields = fields.filter((f) => matches(f.name, fieldFilter));
+
   const addToQuery = (clause: string) => {
     const q = filters.search.trim();
     setFilters({ ...filters, search: q ? `${q} and ${clause}` : clause });
@@ -115,7 +125,7 @@ export function LogsView() {
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 flex-wrap items-end gap-2 border-b border-divider bg-content1 p-2">
         <Field label="service" className="w-44">
-          <FilterSelect
+          <FilterAutocomplete
             ariaLabel="Service"
             value={filters.service}
             onChange={(service) => setFilters({ ...filters, service })}
@@ -212,14 +222,28 @@ export function LogsView() {
 
       <div className="flex min-h-0 flex-1">
       {fieldsOpen && (
-        <aside className="w-60 shrink-0 overflow-y-auto border-r border-divider bg-content1 p-2">
-          <h3 className="mb-1 px-1 text-[10px] uppercase tracking-wider text-default-500">
+        <aside className="flex w-60 shrink-0 flex-col border-r border-divider bg-content1">
+          <h3 className="shrink-0 px-3 pt-2 text-[10px] uppercase tracking-wider text-default-500">
             fields
           </h3>
+          <SearchBox
+            value={fieldFilter}
+            onChange={setFieldFilter}
+            ariaLabel="Filter fields"
+            placeholder="filter fields…"
+            showing={shownFields.length}
+            total={fields.length}
+          />
+          <div className="min-h-0 flex-1 overflow-y-auto p-2">
           {fields.length === 0 && (
             <p className="px-1 text-[11px] text-default-400">no fields yet</p>
           )}
-          {fields.map((f) => (
+          {fields.length > 0 && shownFields.length === 0 && (
+            <p className="px-1 text-[11px] text-default-400">
+              no field matches “{fieldFilter}”
+            </p>
+          )}
+          {shownFields.map((f) => (
             <details key={f.name} className="group mb-0.5">
               <summary className="flex cursor-pointer items-baseline justify-between gap-2 rounded px-1 py-0.5 text-[11px] hover:bg-content2">
                 <span className="truncate text-default-600">{f.name}</span>
@@ -246,6 +270,7 @@ export function LogsView() {
               </div>
             </details>
           ))}
+          </div>
         </aside>
       )}
       <div className="min-h-0 min-w-0 flex-1 overflow-y-auto font-mono">
