@@ -57,6 +57,20 @@ export function TimeRangePicker() {
   // still — a spinner or a placeholder row is what made this flicker.
   const [loading, setLoading] = useState(false);
 
+  // Fetch the chunk once the page is idle. Keeping it out of the main
+  // bundle is about first paint, which this does not touch — but making
+  // someone wait most of a second the first time they open the picker is
+  // its own problem, and hover only helps a mouse.
+  useEffect(() => {
+    const idle = window.requestIdleCallback;
+    if (idle) {
+      const id = idle(() => void importPicker());
+      return () => window.cancelIdleCallback?.(id);
+    }
+    const id = setTimeout(() => void importPicker(), 2_000);
+    return () => clearTimeout(id);
+  }, []);
+
   const openPicker = async (seed: Range | null) => {
     setDraft(seed);
     // Swap in only once the chunk is in memory. Rendering first showed a
