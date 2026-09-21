@@ -95,7 +95,7 @@
             # that only bumps versions can still need a new one. Re-run the
             # nix workflow and paste the "got:" hash from the mismatch error
             # (the local `nix hash path ui/dist` can differ slightly).
-            outputHash = "sha256-HoaomDFQvVvuaygYQZV1RwgcHAls6+y//S3wEDdpMEg=";
+            outputHash = "sha256-ijlVCXYfJ+VeDmgWseZOQXGdeYXuLsoueXLbaCMZMKc=";
           };
 
           # Keep proto files (tonic codegen inputs) alongside the cargo sources.
