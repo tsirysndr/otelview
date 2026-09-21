@@ -203,7 +203,12 @@ export function SettingsView() {
     useServerProfiles();
 
   return (
-    <div className="mx-auto flex max-w-xl flex-col gap-4 p-6">
+    // `main` is overflow-hidden, so a view that does not scroll itself just
+    // clips. The scroll container is the full-height outer element and the
+    // column stays centred inside it, so the scrollbar tracks the pane edge
+    // rather than the text column.
+    <div className="h-full overflow-y-auto">
+      <div className="mx-auto flex max-w-xl flex-col gap-4 p-6">
       <div>
         <h2 className="text-sm font-semibold uppercase tracking-wider text-default-500">
           servers
@@ -267,6 +272,7 @@ export OTEL_EXPORTER_OTLP_HEADERS="x-otelview-token=<token>"`}
           currently reading from{" "}
           <span className="text-neon-cyan">{describeTarget(active)}</span>
         </p>
+      </div>
       </div>
     </div>
   );

@@ -8,6 +8,36 @@ function stored() {
   return JSON.parse(localStorage.getItem("otelview.api") ?? "null");
 }
 
+describe("settings layout", () => {
+  beforeEach(() => localStorage.clear());
+
+  // Regression guard. `main` in App.tsx is overflow-hidden, so a view that
+  // does not scroll itself simply clips: with a few servers saved, the list
+  // ran past the viewport with no wheel, no touch and no scrollbar. It was
+  // still reachable programmatically, which is why automated checks that
+  // call scrollIntoView saw nothing wrong.
+  it("scrolls its own content instead of clipping it", () => {
+    renderApp(<SettingsView />);
+
+    // Walk up from the content rather than indexing into the tree, so the
+    // providers renderApp wraps things in cannot break this.
+    let el: HTMLElement | null = screen.getByText("servers");
+    let scroller: HTMLElement | null = null;
+    while (el) {
+      if (/\boverflow-y-auto\b/.test(el.className)) {
+        scroller = el;
+        break;
+      }
+      el = el.parentElement;
+    }
+
+    expect(scroller, "settings content must sit inside a scroll container").not.toBeNull();
+    // A scroll container also needs a bounded height, or there is nothing
+    // for the content to scroll within.
+    expect(scroller!.className).toMatch(/\bh-full\b/);
+  });
+});
+
 describe("server profile validation", () => {
   beforeEach(() => localStorage.clear());
 
