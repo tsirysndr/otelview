@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { IconAlignLeft, IconChartLine, IconTopologyStar3 } from "@tabler/icons-react";
 import { useAtomValue, useSetAtom } from "jotai";
@@ -8,7 +9,9 @@ import { api } from "../lib/api";
 import { serviceNeon } from "../lib/colors";
 import { fmtCount, fmtDuration } from "../lib/format";
 import { EmptyState } from "../components/EmptyState";
+import { SearchBox } from "../components/SearchBox";
 import { ServiceMap } from "../components/ServiceMap";
+import { filterGraph, matches } from "../lib/search";
 import { Skeleton, SkeletonTable } from "../components/Skeleton";
 
 /** APM-style overview: dependency map + per-service RED metrics
@@ -20,6 +23,9 @@ export function ServicesView() {
   const setOpenTrace = useSetAtom(openTraceIdAtom);
   const setTraceFilters = useSetAtom(traceFiltersAtom);
   const correlate = useCorrelate();
+  // One box narrows both the map and the table: they describe the same
+  // services, so filtering them apart would only invite disagreement.
+  const [filter, setFilter] = useState("");
 
   const { data: graph, isLoading: graphLoading } = useQuery({
     queryKey: ["service-graph", timeParams],
@@ -63,10 +69,23 @@ export function ServicesView() {
     setView("traces");
   };
 
+  const shownStats = stats.filter((s) => matches(s.service, filter));
+  const shownGraph = graph ? filterGraph(graph, filter) : graph;
+  // Scale the latency bars to everything, not just what survived the
+  // filter, so a row's bar means the same before and after typing.
   const maxP95 = Math.max(...stats.map((s) => s.p95_ms), 1);
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-y-auto">
+      <SearchBox
+        value={filter}
+        onChange={setFilter}
+        ariaLabel="Filter services"
+        placeholder="filter services…"
+        showing={shownStats.length}
+        total={stats.length}
+      />
+
       {graph && graph.nodes.length > 0 && (
         <div className="shrink-0 border-b border-divider">
           <div className="flex items-baseline justify-between px-3 pt-2">
@@ -77,7 +96,13 @@ export function ServicesView() {
               from {graph.sampled_traces} sampled traces
             </span>
           </div>
-          <ServiceMap graph={graph} />
+          {shownGraph && shownGraph.nodes.length > 0 ? (
+            <ServiceMap graph={shownGraph} />
+          ) : (
+            <p className="px-3 pb-3 pt-2 text-[11px] text-default-400">
+              no service matches “{filter}”
+            </p>
+          )}
         </div>
       )}
 
@@ -100,7 +125,7 @@ export function ServicesView() {
             </tr>
           </thead>
           <tbody>
-            {stats.map((s) => {
+            {shownStats.map((s) => {
               const { color, glow } = serviceNeon(s.service);
               const errPct = s.error_rate * 100;
               return (

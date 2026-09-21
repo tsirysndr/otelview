@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Chip } from "@heroui/react";
 import { useQuery } from "@tanstack/react-query";
 import { useAtom, useAtomValue } from "jotai";
@@ -15,7 +16,9 @@ import { LineChart, type ChartSeries } from "../components/LineChart";
 import { EmptyState } from "../components/EmptyState";
 import { Field } from "../components/Field";
 import { FilterSelect } from "../components/FilterSelect";
+import { SearchBox } from "../components/SearchBox";
 import { SkeletonChart, SkeletonList } from "../components/Skeleton";
+import { matches } from "../lib/search";
 
 const TYPE_COLORS: Record<string, "secondary" | "primary" | "warning" | "success" | "default"> = {
   gauge: "secondary",
@@ -37,6 +40,9 @@ export function MetricsView() {
   const [agg, setAgg] = useAtom(metricAggAtom);
   const timeParams = useTimeParams();
   const live = useAtomValue(liveAtom);
+  // Client-side only: the metric list is already fully loaded, so this
+  // narrows what is on screen rather than re-querying.
+  const [filter, setFilter] = useState("");
 
   const { data: metrics = [], isLoading } = useQuery({
     queryKey: ["metrics"],
@@ -45,6 +51,9 @@ export function MetricsView() {
   });
   const { data: services = [] } = useQuery({ queryKey: ["services"], queryFn: api.services });
 
+  const shown = metrics.filter((m) => matches(m.name, filter));
+  // The selection survives a filter that hides it — narrowing the list
+  // should not silently swap the chart out from under you.
   const active = selected ?? metrics[0]?.name ?? null;
   const activeInfo = metrics.find((m) => m.name === active);
 
@@ -91,9 +100,22 @@ export function MetricsView() {
         <div className="flex h-9 shrink-0 items-center border-b border-divider px-3 text-[11px] uppercase tracking-wider text-default-500">
           metrics ({metrics.length})
         </div>
+        <SearchBox
+          value={filter}
+          onChange={setFilter}
+          ariaLabel="Filter metrics"
+          placeholder="filter metrics…"
+          showing={shown.length}
+          total={metrics.length}
+        />
         <div className="min-h-0 flex-1 overflow-y-auto">
           {isLoading && <SkeletonList rows={12} label="loading metrics" />}
-          {metrics.map((m) => (
+          {!isLoading && shown.length === 0 && (
+            <p className="px-3 py-4 text-center text-[11px] text-default-400">
+              no metric matches “{filter}”
+            </p>
+          )}
+          {shown.map((m) => (
             <button
               key={m.name}
               onClick={() => setSelected(m.name)}
