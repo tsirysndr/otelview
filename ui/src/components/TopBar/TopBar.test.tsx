@@ -19,11 +19,21 @@ describe("top bar overflow", () => {
     }
   });
 
-  it("keeps the time-range popover inside the bar reachable", async () => {
+  it("reveals the range picker from inside the bar", async () => {
     renderApp(<TopBar />);
-    await userEvent.click(screen.getByRole("button", { name: "Custom time range" }));
-    // The popover renders as a sibling within the bar's subtree; if it ever
-    // moves to a portal this assertion should be revisited, not deleted.
-    expect(await screen.findByLabelText("Start time")).toBeInTheDocument();
+    // Quick lookbacks are the default; the calendar swaps in the picker.
+    expect(screen.getByRole("button", { name: "1h" })).toBeInTheDocument();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Pick a custom time range" }),
+    );
+
+    // HeroUI's DateRangePicker owns the calendar and both times; reaching it
+    // at all is what this guards, since the bar used to clip its own
+    // descendants.
+    expect(await screen.findByLabelText("Custom time range")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Clear custom range" }),
+    ).toBeInTheDocument();
   });
 });

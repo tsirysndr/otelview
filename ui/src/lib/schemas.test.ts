@@ -1,11 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  accessTokenSchema,
-  baseUrlSchema,
-  serverProfileSchema,
-  timeOfDaySchema,
-  timeRangeSchema,
-} from "./schemas";
+import { accessTokenSchema, baseUrlSchema, serverProfileSchema } from "./schemas";
 
 describe("baseUrl", () => {
   it("accepts empty, meaning this same server", () => {
@@ -64,39 +58,6 @@ describe("server profile", () => {
     expect(
       serverProfileSchema.safeParse({ name: "local", baseUrl: "", token: "" }).success,
     ).toBe(true);
-  });
-});
-
-describe("time of day", () => {
-  it("accepts valid 24h clock values", () => {
-    for (const v of ["00:00", "9:05", "09:05", "23:59", "13:30"]) {
-      expect(timeOfDaySchema.safeParse(v).success, v).toBe(true);
-    }
-  });
-
-  it("rejects out-of-range and malformed values", () => {
-    for (const v of ["24:00", "23:60", "9:5", "abc", "", "12", "12:345"]) {
-      expect(timeOfDaySchema.safeParse(v).success, v).toBe(false);
-    }
-  });
-});
-
-describe("time range ordering", () => {
-  it("accepts start before or equal to end", () => {
-    expect(timeRangeSchema.safeParse({ fromTime: "00:00", toTime: "23:59" }).success).toBe(true);
-    expect(timeRangeSchema.safeParse({ fromTime: "09:00", toTime: "09:00" }).success).toBe(true);
-  });
-
-  it("rejects an end before the start, and blames the end field", () => {
-    const r = timeRangeSchema.safeParse({ fromTime: "18:00", toTime: "09:00" });
-    expect(r.success).toBe(false);
-    expect(r.success === false && r.error.issues[0].path).toEqual(["toTime"]);
-  });
-
-  it("reports the malformed field rather than the ordering", () => {
-    const r = timeRangeSchema.safeParse({ fromTime: "nope", toTime: "09:00" });
-    expect(r.success).toBe(false);
-    expect(r.success === false && r.error.issues[0].path).toEqual(["fromTime"]);
   });
 });
 

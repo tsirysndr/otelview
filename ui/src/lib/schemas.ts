@@ -33,30 +33,6 @@ export const serverProfileSchema = z.object({
 
 export type ServerProfileForm = z.infer<typeof serverProfileSchema>;
 
-/** 24-hour wall clock, as typed into the time-range picker. */
-export const timeOfDaySchema = z
-  .string()
-  .trim()
-  .regex(/^([01]?\d|2[0-3]):[0-5]\d$/, "use HH:MM");
-
-export const timeRangeSchema = z
-  .object({
-    fromTime: timeOfDaySchema,
-    toTime: timeOfDaySchema,
-  })
-  // Ordering across the two fields is only checkable once both parse, so it
-  // lives here rather than on either field.
-  .refine(
-    (v) => {
-      const [fh, fm] = v.fromTime.split(":").map(Number);
-      const [th, tm] = v.toTime.split(":").map(Number);
-      return fh * 60 + fm <= th * 60 + tm;
-    },
-    { path: ["toTime"], message: "end must be at or after start" },
-  );
-
-export type TimeRangeForm = z.infer<typeof timeRangeSchema>;
-
 export const accessTokenSchema = z.object({
   token: z.string().trim().min(1, "paste the token to continue"),
 });
