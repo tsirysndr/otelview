@@ -1,4 +1,9 @@
 import { DateRangePicker } from "@heroui/react";
+// @internationalized/date is pinned to an exact version in package.json,
+// matching what HeroUI itself depends on. A caret range floats to a newer
+// patch, npm/bun then give HeroUI its own nested copy, and the two
+// `ZonedDateTime` classes become nominally distinct types — so the value
+// built here no longer type-checks against the picker that receives it.
 import {
   fromDate,
   getLocalTimeZone,
