@@ -2970,7 +2970,7 @@ dependencies = [
 
 [[package]]
 name = "otelview-api"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "axum",
@@ -2989,7 +2989,7 @@ dependencies = [
 
 [[package]]
 name = "otelview-config"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "serde",
@@ -2999,7 +2999,7 @@ dependencies = [
 
 [[package]]
 name = "otelview-desktop"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "otelview-api",
  "otelview-config",
@@ -3015,7 +3015,7 @@ dependencies = [
 
 [[package]]
 name = "otelview-model"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -3023,7 +3023,7 @@ dependencies = [
 
 [[package]]
 name = "otelview-receiver"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3047,7 +3047,7 @@ dependencies = [
 
 [[package]]
 name = "otelview-storage"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "async-trait",
