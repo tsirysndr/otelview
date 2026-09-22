@@ -8,6 +8,7 @@ license.workspace = true
 otelview-model = { workspace = true }
 otelview-config = { workspace = true }
 otelview-storage = { workspace = true }
+otelview-auth = { workspace = true }
 anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -20,6 +21,8 @@ rust-embed = { workspace = true }
 mime = { workspace = true }
 
 [dev-dependencies]
+otelview-auth = { workspace = true, features = ["testing"] }
+otelview-storage = { workspace = true }
 async-trait = { workspace = true }
 tower = { workspace = true, features = ["util"] }
 http-body-util = "0.1"

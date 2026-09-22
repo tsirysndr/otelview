@@ -14,6 +14,7 @@ otelview-storage = { workspace = true }
 otelview-receiver = { workspace = true }
 otelview-api = { workspace = true }
 otelview-mcp = { workspace = true }
+otelview-auth = { workspace = true }
 anyhow = { workspace = true }
 futures = "0.3"
 clap = { workspace = true }

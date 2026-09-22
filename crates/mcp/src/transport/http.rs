@@ -16,6 +16,7 @@ use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use axum::Router;
+use otelview_auth::{Authenticator, Outcome, Permission};
 
 use crate::Mcp;
 
@@ -29,6 +30,11 @@ pub struct Auth {
     /// Header accepted besides `Authorization: Bearer …`, matching the
     /// ingest/API header so one token works everywhere.
     pub header: String,
+    /// Single sign-on. When set, an agent may present an OIDC access
+    /// token instead of the shared one — which is what lets a human's
+    /// own identity, roles and MFA follow them into an agent session
+    /// rather than everyone sharing one secret.
+    pub oidc: Option<Arc<Authenticator>>,
 }
 
 impl Auth {
@@ -36,6 +42,7 @@ impl Auth {
         Self {
             token: None,
             header: "x-otelview-token".into(),
+            oidc: None,
         }
     }
 
@@ -46,15 +53,54 @@ impl Auth {
         }
     }
 
-    pub fn enabled(&self) -> bool {
-        self.token.as_deref().is_some_and(|t| !t.is_empty())
+    pub fn with_oidc(mut self, oidc: Option<Arc<Authenticator>>) -> Self {
+        self.oidc = oidc;
+        self
     }
 
-    /// True when `headers` carries the expected token, in either accepted
-    /// form. Open endpoints admit everyone.
-    fn admits(&self, headers: &HeaderMap) -> bool {
+    /// True when *something* guards this endpoint.
+    pub fn enabled(&self) -> bool {
+        self.token.as_deref().is_some_and(|t| !t.is_empty()) || self.oidc.is_some()
+    }
+
+    /// Whether this request may use the endpoint.
+    ///
+    /// The shared token first because it is a byte comparison, then the
+    /// identity provider, which may cost a network call the first time it
+    /// sees a signing key.
+    async fn admits_request(&self, headers: &HeaderMap) -> Admission {
+        if self.static_token_matches(headers) {
+            return Admission::Allowed;
+        }
+        let Some(oidc) = &self.oidc else {
+            return if self.token.is_some() {
+                Admission::Denied
+            } else {
+                // No token and no provider: the endpoint is open, and
+                // `serve` has already refused to expose it beyond
+                // loopback in that state.
+                Admission::Allowed
+            };
+        };
+        match oidc.authenticate(headers).await {
+            Outcome::Authenticated(principal) => {
+                if principal.can(Permission::UseMcp) {
+                    tracing::debug!(subject = %principal.label(), "mcp request authenticated");
+                    Admission::Allowed
+                } else {
+                    Admission::Forbidden("this account may not use MCP on this instance".into())
+                }
+            }
+            Outcome::Anonymous | Outcome::Rejected(_) => Admission::Denied,
+            Outcome::Unavailable(reason) => Admission::Unavailable(reason),
+        }
+    }
+
+    /// True when `headers` carries the expected shared token, in either
+    /// accepted form.
+    fn static_token_matches(&self, headers: &HeaderMap) -> bool {
         let Some(expected) = self.token.as_deref().filter(|t| !t.is_empty()) else {
-            return true;
+            return false;
         };
         let presented = headers
             .get(&self.header)
@@ -108,6 +154,19 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
         return false;
     }
     a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+}
+
+/// The answer to "may this request in?".
+enum Admission {
+    Allowed,
+    /// No usable credential: a 401, with a challenge telling the caller
+    /// where to get one.
+    Denied,
+    /// A good credential without the rights: a 403, which a caller must
+    /// not retry by fetching another token.
+    Forbidden(String),
+    /// The provider could not be reached.
+    Unavailable(String),
 }
 
 #[derive(Clone)]
@@ -195,14 +254,29 @@ async fn handle(State(state): State<HttpState>, headers: HeaderMap, body: String
         )
             .into_response();
     }
-    if !state.auth.admits(&headers) {
-        // Which credential was offered, never what it was.
-        tracing::warn!(
-            presented = headers.contains_key(header::AUTHORIZATION)
-                || headers.contains_key(&state.auth.header),
-            "refused an MCP request with a missing or invalid token"
-        );
-        return unauthorized();
+    match state.auth.admits_request(&headers).await {
+        Admission::Allowed => {}
+        Admission::Denied => {
+            // Which credential was offered, never what it was.
+            tracing::warn!(
+                presented = headers.contains_key(header::AUTHORIZATION)
+                    || headers.contains_key(&state.auth.header),
+                "refused an MCP request with a missing or invalid token"
+            );
+            return unauthorized(&state.auth);
+        }
+        Admission::Forbidden(reason) => {
+            tracing::warn!(%reason, "refused an MCP request on authorization");
+            return (StatusCode::FORBIDDEN, reason).into_response();
+        }
+        Admission::Unavailable(reason) => {
+            tracing::error!(%reason, "the identity provider could not be reached");
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                format!("the identity provider could not be reached: {reason}"),
+            )
+                .into_response();
+        }
     }
     tracing::trace!(bytes = body.len(), "mcp message in over http");
     match state.mcp.handle(&body).await {
@@ -225,14 +299,18 @@ async fn unsupported(method: axum::http::Method) -> Response {
         .into_response()
 }
 
-fn unauthorized() -> Response {
+fn unauthorized(auth: &Auth) -> Response {
+    // With a provider configured the challenge points at RFC 9728
+    // metadata, which is how an MCP client discovers where to get a token
+    // instead of needing one pasted in by hand.
+    let challenge = match &auth.oidc {
+        Some(oidc) => oidc.challenge("/.well-known/oauth-protected-resource"),
+        None => "Bearer realm=\"otelview\", error=\"invalid_token\"".to_string(),
+    };
     (
         StatusCode::UNAUTHORIZED,
-        [(
-            header::WWW_AUTHENTICATE,
-            "Bearer realm=\"otelview\", error=\"invalid_token\"",
-        )],
-        "missing or invalid MCP token",
+        [(header::WWW_AUTHENTICATE, challenge)],
+        "missing or invalid MCP credentials",
     )
         .into_response()
 }

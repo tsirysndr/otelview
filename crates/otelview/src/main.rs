@@ -171,7 +171,8 @@ async fn run_mcp(
                 "initializing storage backend (a DuckDB file cannot be opened twice — \
                      use --endpoint to query a running otelview instead)",
             )?;
-            let (mcp, _) = otelview_mcp::from_storage(&cfg, storage);
+            let oidc = otelview_auth::authenticator(&cfg)?;
+            let (mcp, _) = otelview_mcp::from_storage(&cfg, storage, oidc);
             mcp
         }
     };
@@ -185,6 +186,7 @@ async fn run_mcp(
             let auth = otelview_mcp::http::Auth {
                 token: cfg.mcp.resolved_token(&cfg),
                 header: cfg.auth.header.clone(),
+                oidc: otelview_auth::authenticator(&cfg)?,
             };
             otelview_mcp::http::serve(mcp, addr, &path, auth).await
         }
@@ -239,16 +241,23 @@ async fn run_server(cfg: Config) -> Result<()> {
         }));
     }
     {
-        // MCP rides on the UI port, guarded by its own token, so a running
-        // otelview *is* an MCP server with nothing else to start.
-        let mcp = otelview_mcp::mounted_router(&cfg, storage.clone());
+        // One authenticator for the whole process: the API, the UI and
+        // MCP share a session table and a key cache rather than each
+        // keeping their own view of who is signed in.
+        let oidc = otelview_auth::authenticator(&cfg)?;
+        // MCP rides on the UI port, guarded by the same credentials, so a
+        // running otelview *is* an MCP server with nothing else to start.
+        let mcp = otelview_mcp::mounted_router(&cfg, storage.clone(), oidc.clone());
         if mcp.is_some() {
             tracing::info!(path = %cfg.mcp.path, "MCP endpoint enabled");
         }
+        let opts = otelview_api::ServeOptions::default()
+            .with_extra(mcp)
+            .with_auth(oidc);
         let cfg = cfg.clone();
         let storage = storage.clone();
         tasks.push(tokio::spawn(async move {
-            otelview_api::serve_with(&cfg, storage, mcp).await
+            otelview_api::serve_with(&cfg, storage, opts).await
         }));
     }
 

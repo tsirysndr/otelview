@@ -60,11 +60,16 @@ pub use transport::stdio;
 /// [`otelview_config::McpConfig::resolved_token`]. Locking the UI locks
 /// this with the same key, so the endpoint cannot be left open by
 /// forgetting a second setting.
-pub fn from_storage(cfg: &Config, storage: DynStorage) -> (Mcp, http::Auth) {
+pub fn from_storage(
+    cfg: &Config,
+    storage: DynStorage,
+    oidc: Option<Arc<otelview_auth::Authenticator>>,
+) -> (Mcp, http::Auth) {
     let mcp = Mcp::new(Arc::new(Direct::new(storage, Arc::new(cfg.clone()))));
     let auth = http::Auth {
         token: cfg.mcp.resolved_token(cfg),
         header: cfg.auth.header.clone(),
+        oidc,
     };
     (mcp, auth)
 }
@@ -78,11 +83,15 @@ pub fn from_endpoint(endpoint: &str, token: Option<String>) -> Result<Mcp> {
 ///
 /// Carries its own auth so that mounting it somewhere else — or serving it
 /// standalone — cannot lose the token by accident.
-pub fn mounted_router(cfg: &Config, storage: DynStorage) -> Option<axum::Router> {
+pub fn mounted_router(
+    cfg: &Config,
+    storage: DynStorage,
+    oidc: Option<Arc<otelview_auth::Authenticator>>,
+) -> Option<axum::Router> {
     if !cfg.mcp.enabled {
         return None;
     }
-    let (mcp, auth) = from_storage(cfg, storage);
+    let (mcp, auth) = from_storage(cfg, storage, oidc);
     if !auth.enabled() {
         tracing::info!(
             path = %cfg.mcp.path,

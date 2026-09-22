@@ -11,6 +11,7 @@ use axum::http::{header, HeaderMap, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
+use otelview_auth::{Authenticator, Outcome, Permission, Principal};
 use otelview_config::Config;
 use otelview_storage::DynStorage;
 use query::{LogSearch, QueryError, SeriesSearch, TraceSearch, Window, DEFAULT_HISTOGRAM_BUCKETS};
@@ -35,9 +36,34 @@ pub struct ApiState {
     pub config: Arc<Config>,
 }
 
+/// What to serve beside the API, and who is allowed to reach it.
+///
+/// A struct rather than more arguments: the desktop shell and the binary
+/// both call in here, and every new option was otherwise a signature
+/// change that only one of them noticed.
+#[derive(Default)]
+pub struct ServeOptions {
+    /// Merged in at the root — the MCP endpoint, in practice.
+    pub extra: Option<Router>,
+    /// Single sign-on. `None` leaves the static-token behaviour alone.
+    pub auth: Option<Arc<Authenticator>>,
+}
+
+impl ServeOptions {
+    pub fn with_extra(mut self, extra: Option<Router>) -> Self {
+        self.extra = extra;
+        self
+    }
+
+    pub fn with_auth(mut self, auth: Option<Arc<Authenticator>>) -> Self {
+        self.auth = auth;
+        self
+    }
+}
+
 /// Serve the UI + API. Runs until aborted.
 pub async fn serve(cfg: &Config, storage: DynStorage) -> Result<()> {
-    serve_with(cfg, storage, None).await
+    serve_with(cfg, storage, ServeOptions::default()).await
 }
 
 /// Serve the UI + API with `extra` merged in at the root.
@@ -49,13 +75,13 @@ pub async fn serve(cfg: &Config, storage: DynStorage) -> Result<()> {
 /// Separate from [`serve`] rather than an argument on it: the desktop shell
 /// embeds a server too, and it lives outside this workspace where a changed
 /// signature is found by CI rather than by the compiler here.
-pub async fn serve_with(cfg: &Config, storage: DynStorage, extra: Option<Router>) -> Result<()> {
+pub async fn serve_with(cfg: &Config, storage: DynStorage, opts: ServeOptions) -> Result<()> {
     let addr: std::net::SocketAddr = cfg
         .ui
         .listen
         .parse()
         .with_context(|| format!("invalid ui listen address {}", cfg.ui.listen))?;
-    let router = router_with(cfg, storage, extra);
+    let router = router_with(cfg, storage, opts);
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .with_context(|| format!("binding UI/API server to {addr}"))?;
@@ -66,10 +92,10 @@ pub async fn serve_with(cfg: &Config, storage: DynStorage, extra: Option<Router>
 }
 
 pub fn router(cfg: &Config, storage: DynStorage) -> Router {
-    router_with(cfg, storage, None)
+    router_with(cfg, storage, ServeOptions::default())
 }
 
-pub fn router_with(cfg: &Config, storage: DynStorage, extra: Option<Router>) -> Router {
+pub fn router_with(cfg: &Config, storage: DynStorage, opts: ServeOptions) -> Router {
     let state = ApiState {
         storage,
         config: Arc::new(cfg.clone()),
@@ -91,13 +117,40 @@ pub fn router_with(cfg: &Config, storage: DynStorage, extra: Option<Router>) -> 
         .route("/traces/fields", get(trace_fields_handler))
         .route("/config", get(config_view))
         .with_state(state.clone());
-    if cfg.ui.auth_enabled() || (cfg.auth.enabled() && cfg.auth.protect_api) {
-        api = api.layer(axum::middleware::from_fn_with_state(state, require_token));
-    }
+    // Single sign-on supersedes the static token: the authenticator still
+    // accepts one when `allow_static_token` says so, so this is one gate
+    // rather than two that have to agree.
+    let static_token_required =
+        cfg.ui.auth_enabled() || (cfg.auth.enabled() && cfg.auth.protect_api);
+    let mut app = match &opts.auth {
+        Some(auth) => {
+            api = api.layer(axum::middleware::from_fn_with_state(
+                auth.clone(),
+                authenticate,
+            ));
+            Router::new()
+                .nest("/api", api)
+                .merge(otelview_auth::routes::router(auth.clone()))
+        }
+        None => {
+            if static_token_required {
+                api = api.layer(axum::middleware::from_fn_with_state(state, require_token));
+            }
+            // The UI asks one question — "how do I sign in here?" — and
+            // gets an answer whether or not a provider is configured.
+            let info = otelview_auth::routes::info_without_sso(static_token_required);
+            Router::new().nest("/api", api).route(
+                "/auth/info",
+                get(move || {
+                    let info = info.clone();
+                    async move { Json(info) }
+                }),
+            )
+        }
+    };
     // `extra` carries its own auth: it is also served standalone, where
     // this router isn't in the picture, so the guard has to travel with it.
-    let mut app = Router::new().nest("/api", api);
-    if let Some(extra) = extra {
+    if let Some(extra) = opts.extra {
         app = app.merge(extra);
     }
     let mut app = app.fallback(static_handler);
@@ -105,6 +158,62 @@ pub fn router_with(cfg: &Config, storage: DynStorage, extra: Option<Router>) -> 
         app = app.layer(CorsLayer::very_permissive());
     }
     app
+}
+
+/// Identify the caller, and refuse the request if they may not read
+/// telemetry.
+///
+/// The principal is put in the request's extensions so a handler that
+/// needs more than "may read" — `/api/config` wants an admin — can ask
+/// without authenticating again.
+async fn authenticate(
+    State(auth): State<Arc<Authenticator>>,
+    headers: HeaderMap,
+    mut request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Response {
+    let resource_metadata = "/.well-known/oauth-protected-resource";
+    match auth.authenticate(&headers).await {
+        Outcome::Authenticated(principal) => {
+            if !principal.can(Permission::ReadTelemetry) {
+                return forbidden("this account may not read telemetry on this instance");
+            }
+            tracing::trace!(subject = %principal.label(), "authenticated request");
+            request.extensions_mut().insert(*principal);
+            next.run(request).await
+        }
+        Outcome::Anonymous => unauthorized(
+            &auth.challenge(resource_metadata),
+            "sign in at /auth/login, or present a bearer token",
+        ),
+        Outcome::Rejected(reason) => {
+            tracing::debug!(%reason, "rejected a credential");
+            unauthorized(&auth.challenge(resource_metadata), &reason)
+        }
+        // The provider being down is this server's problem, not the
+        // caller's: a 401 would send them round the login loop forever.
+        Outcome::Unavailable(reason) => {
+            tracing::error!(%reason, "the identity provider could not be reached");
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                format!("the identity provider could not be reached: {reason}"),
+            )
+                .into_response()
+        }
+    }
+}
+
+fn unauthorized(challenge: &str, message: &str) -> Response {
+    (
+        StatusCode::UNAUTHORIZED,
+        [(header::WWW_AUTHENTICATE, challenge)],
+        message.to_string(),
+    )
+        .into_response()
+}
+
+fn forbidden(message: &str) -> Response {
+    (StatusCode::FORBIDDEN, message.to_string()).into_response()
 }
 
 async fn require_token(
@@ -479,7 +588,17 @@ async fn stats(State(state): State<ApiState>) -> Response {
     }
 }
 
-async fn config_view(State(state): State<ApiState>) -> Response {
+/// The configuration names storage paths, endpoints and tokens' shapes.
+/// Redacted, but still an admin's to read rather than every viewer's.
+async fn config_view(
+    State(state): State<ApiState>,
+    principal: Option<axum::Extension<Principal>>,
+) -> Response {
+    if let Some(axum::Extension(principal)) = principal {
+        if !principal.can(Permission::ReadConfig) {
+            return forbidden("reading this instance's configuration needs an admin role");
+        }
+    }
     Json(state.config.sanitized()).into_response()
 }
 

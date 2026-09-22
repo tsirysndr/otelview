@@ -9,6 +9,7 @@ otelview-model = { workspace = true }
 otelview-config = { workspace = true }
 otelview-storage = { workspace = true }
 otelview-api = { workspace = true }
+otelview-auth = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 axum = { workspace = true }
