@@ -559,14 +559,36 @@ impl McpConfig {
     }
 }
 
+/// Unknown fields are refused so a typo cannot pass silently — but the
+/// same error is what a config written for a newer otelview looks like to
+/// an older binary, and "unknown field `oidc`" is a poor way to learn
+/// that. When the field is one this version genuinely does not have, say
+/// which version is complaining.
+fn unknown_field_hint(message: &str) -> anyhow::Error {
+    if message.contains("unknown field") {
+        anyhow::anyhow!(
+            "{message}\n\nThis otelview is {}. A config naming a field it does not \
+             have usually means the binary is older than the config — check that \
+             they came from the same release.",
+            env!("CARGO_PKG_VERSION")
+        )
+    } else {
+        anyhow::anyhow!("{message}")
+    }
+}
+
 impl Config {
     pub fn load(path: &Path) -> Result<Self> {
         let raw = std::fs::read_to_string(path)
             .with_context(|| format!("reading config file {}", path.display()))?;
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
         let config: Config = match ext {
-            "yaml" | "yml" => serde_yaml::from_str(&raw).context("parsing YAML config")?,
-            "toml" => toml::from_str(&raw).context("parsing TOML config")?,
+            "yaml" | "yml" => serde_yaml::from_str(&raw)
+                .map_err(|e| unknown_field_hint(&e.to_string()))
+                .context("parsing YAML config")?,
+            "toml" => toml::from_str(&raw)
+                .map_err(|e| unknown_field_hint(&e.to_string()))
+                .context("parsing TOML config")?,
             _ => {
                 // No/unknown extension: try YAML first (superset-ish for our
                 // shapes), then TOML, and report both errors on failure.
@@ -654,6 +676,35 @@ mod tests {
 
     fn env_guard() -> std::sync::MutexGuard<'static, ()> {
         ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// A config written for a newer otelview reaches an older binary as
+    /// "unknown field", which is a poor way to learn the versions differ.
+    #[test]
+    fn an_unknown_field_says_which_version_is_complaining() {
+        let dir = std::env::temp_dir().join("otelview-unknown-field-test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("otelview.toml");
+        std::fs::write(&path, "[storage]\nfrom_the_future = true\n").unwrap();
+
+        let err = format!("{:#}", Config::load(&path).unwrap_err());
+        assert!(err.contains("unknown field"), "{err}");
+        assert!(err.contains(env!("CARGO_PKG_VERSION")), "{err}");
+        assert!(err.contains("older than the config"), "{err}");
+        std::fs::remove_file(&path).ok();
+    }
+
+    /// And a config this version understands is still just loaded.
+    #[test]
+    fn a_good_config_file_loads() {
+        let dir = std::env::temp_dir().join("otelview-good-config-test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("otelview.toml");
+        std::fs::write(&path, "[storage]\nbackend = \"duckdb\"\n").unwrap();
+
+        let cfg = Config::load(&path).unwrap();
+        assert_eq!(cfg.storage.backend, Backend::Duckdb);
+        std::fs::remove_file(&path).ok();
     }
 
     #[test]
