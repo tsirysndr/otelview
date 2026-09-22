@@ -350,7 +350,6 @@ mod tests {
     use http_body_util::BodyExt;
     use otelview_config::MemoryConfig;
     use otelview_storage::memory::MemoryStorage;
-    use otelview_storage::Storage;
     use tower::ServiceExt;
 
     fn otlp_json_traces() -> &'static str {

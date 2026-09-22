@@ -39,7 +39,7 @@ fn span(i: usize, spans_per_trace: usize) -> SpanRecord {
     SpanRecord {
         trace_id: format!("{trace:032x}"),
         span_id: format!("{i:016x}"),
-        parent_span_id: if i % spans_per_trace == 0 {
+        parent_span_id: if i.is_multiple_of(spans_per_trace) {
             String::new()
         } else {
             format!("{:016x}", trace * spans_per_trace)
@@ -49,12 +49,12 @@ fn span(i: usize, spans_per_trace: usize) -> SpanRecord {
         kind: "server".into(),
         start_time_unix_nano: 1_700_000_000_000_000_000 + (i as u64) * 1_000_000,
         end_time_unix_nano: 1_700_000_000_000_000_000 + (i as u64) * 1_000_000 + 3_500_000,
-        status_code: if i % 50 == 0 { 2 } else { 0 },
+        status_code: if i.is_multiple_of(50) { 2 } else { 0 },
         status_message: String::new(),
         attributes: json!({
             "http.route": ROUTES[i % ROUTES.len()],
             "http.method": "GET",
-            "http.status_code": if i % 50 == 0 { 500 } else { 200 },
+            "http.status_code": if i.is_multiple_of(50) { 500 } else { 200 },
             "mb.query.track": format!("track number {i}"),
         }),
         resource_attributes: json!({"service.name": SERVICES[i % SERVICES.len()]}),
@@ -70,8 +70,8 @@ fn log(i: usize) -> LogRecord {
     LogRecord {
         time_unix_nano: t,
         observed_time_unix_nano: t,
-        severity_number: if i % 40 == 0 { 17 } else { 9 },
-        severity_text: if i % 40 == 0 { "ERROR" } else { "INFO" }.into(),
+        severity_number: if i.is_multiple_of(40) { 17 } else { 9 },
+        severity_text: if i.is_multiple_of(40) { "ERROR" } else { "INFO" }.into(),
         body: json!(format!(
             "http request {} handled in {}ms",
             ROUTES[i % ROUTES.len()],

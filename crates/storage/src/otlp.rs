@@ -751,7 +751,6 @@ mod tests {
                 key: "service.name".into(),
                 value: Some(AnyValue {
                     value: Some(any_value::Value::StringValue(service.into())),
-                    ..Default::default()
                 }),
                 ..Default::default()
             }],
@@ -776,7 +775,6 @@ mod tests {
                 key: "http.method".into(),
                 value: Some(AnyValue {
                     value: Some(any_value::Value::StringValue("GET".into())),
-                    ..Default::default()
                 }),
                 ..Default::default()
             }],
@@ -830,15 +828,12 @@ mod tests {
                             values: vec![
                                 AnyValue {
                                     value: Some(any_value::Value::IntValue(1)),
-                                    ..Default::default()
                                 },
                                 AnyValue {
                                     value: Some(any_value::Value::BoolValue(true)),
-                                    ..Default::default()
                                 },
                             ],
                         })),
-                        ..Default::default()
                     }),
                     ..Default::default()
                 }],
