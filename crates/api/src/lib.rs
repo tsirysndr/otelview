@@ -36,12 +36,20 @@ pub struct ApiState {
 }
 
 /// Serve the UI + API. Runs until aborted.
+pub async fn serve(cfg: &Config, storage: DynStorage) -> Result<()> {
+    serve_with(cfg, storage, None).await
+}
+
+/// Serve the UI + API with `extra` merged in at the root.
 ///
-/// `extra` is merged in at the root, under the same auth as `/api`: it is
-/// how the MCP endpoint gets mounted without this crate having to know what
-/// MCP is (the mcp crate depends on this one, so the arrow cannot point the
-/// other way).
-pub async fn serve(cfg: &Config, storage: DynStorage, extra: Option<Router>) -> Result<()> {
+/// That is how the MCP endpoint gets mounted without this crate having to
+/// know what MCP is — the mcp crate depends on this one, so the arrow
+/// cannot point the other way.
+///
+/// Separate from [`serve`] rather than an argument on it: the desktop shell
+/// embeds a server too, and it lives outside this workspace where a changed
+/// signature is found by CI rather than by the compiler here.
+pub async fn serve_with(cfg: &Config, storage: DynStorage, extra: Option<Router>) -> Result<()> {
     let addr: std::net::SocketAddr = cfg
         .ui
         .listen

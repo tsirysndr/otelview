@@ -248,7 +248,7 @@ async fn run_server(cfg: Config) -> Result<()> {
         let cfg = cfg.clone();
         let storage = storage.clone();
         tasks.push(tokio::spawn(async move {
-            otelview_api::serve(&cfg, storage, mcp).await
+            otelview_api::serve_with(&cfg, storage, mcp).await
         }));
     }
 
