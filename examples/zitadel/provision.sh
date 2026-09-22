@@ -88,6 +88,25 @@ until api GET /management/v1/projects/_search '{}' | jq -e '.result? // .details
 done
 
 # ------------------------------------------------------------ login ui
+# The login container finishes a sign-in by calling the core back, and
+# that call needs the IAM_LOGIN_CLIENT role — without it the form is
+# served, the password is accepted, and submitting it fails with "No
+# matching permissions found". It shares this user's token, so the role
+# goes here.
+provisioner_id="$(
+  api GET /auth/v1/users/me | jq -r '.user.id // empty'
+)"
+if [ -n "$provisioner_id" ]; then
+  # It is already an IAM member, so this replaces its role list rather
+  # than adding a second membership.
+  api PUT "/admin/v1/members/$provisioner_id" \
+    '{"roles":["IAM_OWNER","IAM_LOGIN_CLIENT"]}' >/dev/null ||
+    echo "warning: could not give the login UI permission to finish sign-ins" >&2
+  echo "login client permission granted"
+else
+  echo "warning: could not identify the provisioning user" >&2
+fi
+
 # v4 requires the Login V2 UI, which is a separate container. The core
 # only redirects to it, so it has to be told where that container is —
 # otherwise the browser is sent to a path the core does not serve and

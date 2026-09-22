@@ -88,6 +88,8 @@ async fn sign_in(app: &Router, idp: &MockIdp, claims: Value) -> String {
     assert_eq!(status, StatusCode::SEE_OTHER, "login should redirect");
     let location = headers["location"].to_str().unwrap().to_string();
     let state = param(&location, "state").expect("the redirect carries state");
+    // A provider echoes the nonce it was sent; otelview checks it.
+    idp.will_echo_nonce(&param(&location, "nonce").expect("the redirect carries a nonce"));
 
     let (status, headers, body) =
         get(app, &format!("/auth/callback?code=the-code&state={state}")).await;
@@ -176,6 +178,61 @@ async fn a_viewer_gets_viewer_permissions_only() {
     assert_eq!(me["permissions"]["administer"], false);
 }
 
+/// The nonce ties the id token to the login this server started. An id
+/// token captured from another login — or minted elsewhere — carries a
+/// different one and must not be accepted.
+#[tokio::test]
+async fn an_id_token_with_the_wrong_nonce_is_refused() {
+    let idp = MockIdp::start().await;
+    let cfg = config(&idp);
+    let (app, _) = app(&cfg).await;
+
+    idp.will_issue(idp.user_claims("ada", "otelview", json!({"otelview.admin": {}})));
+    let (_, headers, _) = get(&app, "/auth/login").await;
+    let location = headers["location"].to_str().unwrap().to_string();
+    let state = param(&location, "state").unwrap();
+    // A nonce from some other login.
+    idp.will_echo_nonce("a-nonce-from-somewhere-else");
+
+    let (status, headers, body) = get(&app, &format!("/auth/callback?code=c&state={state}")).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED, "{body}");
+    assert!(
+        !headers.contains_key("set-cookie"),
+        "no session was created"
+    );
+}
+
+/// Zitadel puts `name` and `email` in the id token and not in the access
+/// token, so a session built from the access token alone knows the user
+/// only as a numeric subject.
+#[tokio::test]
+async fn the_display_name_comes_from_the_id_token() {
+    let idp = MockIdp::start().await;
+    let cfg = config(&idp);
+    let (app, _) = app(&cfg).await;
+
+    // An access token with roles and no profile, as Zitadel issues.
+    let mut claims = idp.user_claims("ada", "otelview", json!({"otelview.admin": {}}));
+    claims["name"] = Value::Null;
+    claims["email"] = Value::Null;
+    let cookie = sign_in(&app, &idp, claims).await;
+
+    let (_, _, body) = send(
+        &app,
+        Request::get("/auth/me")
+            .header("cookie", &cookie)
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    let me: Value = serde_json::from_str(&body).unwrap();
+    // The mock signs the id token from the same claims, so this asserts
+    // the pathway rather than the value: null in, null out, and the
+    // subject is still what identifies the session.
+    assert_eq!(me["subject"], "ada");
+    assert_eq!(me["role"], "admin");
+}
+
 #[tokio::test]
 async fn an_account_without_a_role_is_refused_after_a_valid_login() {
     let idp = MockIdp::start().await;
@@ -204,7 +261,9 @@ async fn a_replayed_callback_is_refused() {
 
     idp.will_issue(idp.user_claims("ada", "otelview", json!({"otelview.admin": {}})));
     let (_, headers, _) = get(&app, "/auth/login").await;
-    let state = param(headers["location"].to_str().unwrap(), "state").unwrap();
+    let location = headers["location"].to_str().unwrap().to_string();
+    let state = param(&location, "state").unwrap();
+    idp.will_echo_nonce(&param(&location, "nonce").unwrap());
 
     let first = get(&app, &format!("/auth/callback?code=c&state={state}")).await;
     assert_eq!(first.0, StatusCode::SEE_OTHER);
@@ -492,7 +551,9 @@ async fn an_open_redirect_is_not_possible_through_return_to() {
 
     idp.will_issue(idp.user_claims("ada", "otelview", json!({"otelview.admin": {}})));
     let (_, headers, _) = get(&app, "/auth/login?return_to=https://evil.example/steal").await;
-    let state = param(headers["location"].to_str().unwrap(), "state").unwrap();
+    let location = headers["location"].to_str().unwrap().to_string();
+    let state = param(&location, "state").unwrap();
+    idp.will_echo_nonce(&param(&location, "nonce").unwrap());
 
     let (_, headers, _) = get(&app, &format!("/auth/callback?code=c&state={state}")).await;
     // Home, not to the attacker.

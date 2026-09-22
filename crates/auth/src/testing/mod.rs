@@ -33,6 +33,9 @@ pub struct TokenRecipe {
     pub kid: String,
     /// Hand back an opaque token rather than a JWT.
     pub opaque: Option<String>,
+    /// The nonce to echo in the id token, as a real provider echoes the
+    /// one it was given in the authorization request.
+    pub nonce: Option<String>,
     /// Answer the token endpoint with an error instead.
     pub fail: Option<String>,
 }
@@ -67,6 +70,7 @@ impl MockIdp {
             claims: json!({}),
             kid: TEST_KID.to_string(),
             opaque: None,
+            nonce: None,
             fail: None,
         }));
         let token_requests = Arc::new(Mutex::new(Vec::new()));
@@ -102,6 +106,13 @@ impl MockIdp {
         recipe.opaque = None;
         recipe.fail = None;
         recipe.kid = TEST_KID.to_string();
+    }
+
+    /// Echo this nonce in the next id token. A provider does this with
+    /// whatever arrived in the authorization request; the tests pull it
+    /// out of the redirect and hand it back the same way.
+    pub fn will_echo_nonce(&self, nonce: &str) {
+        self.recipe.lock().unwrap().nonce = Some(nonce.to_string());
     }
 
     pub fn will_issue_opaque(&self, token: &str) {
@@ -206,11 +217,18 @@ async fn token(State(state): State<IdpState>, body: String) -> Json<Value> {
         Some(opaque) => opaque,
         None => sign(&recipe.claims, &recipe.kid),
     };
+    // The id token carries the nonce and the profile; the access token
+    // carries neither, which is what Zitadel does and what the display
+    // fields therefore have to come from.
+    let mut id_claims = recipe.claims.clone();
+    if let Some(nonce) = &recipe.nonce {
+        id_claims["nonce"] = json!(nonce);
+    }
     Json(json!({
         "access_token": access_token,
         "token_type": "Bearer",
         "expires_in": 3600,
-        "id_token": sign(&recipe.claims, &recipe.kid),
+        "id_token": sign(&id_claims, &recipe.kid),
         "scope": "openid profile email",
     }))
 }

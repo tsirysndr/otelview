@@ -76,11 +76,49 @@ pub async fn verify(
     }
 }
 
+/// Verify the ID token that came back with an access token.
+///
+/// Different from an access token in two ways that matter: it is
+/// addressed to this client rather than to the API's audience, and it
+/// carries the `nonce` from the authorization request. Checking that
+/// nonce is what stops an ID token captured elsewhere being replayed
+/// into this login.
+///
+/// It is also where the provider puts who the user *is* — `name`,
+/// `email` — which an access token is not obliged to carry and which
+/// Zitadel does not.
+pub async fn verify_id_token(
+    cfg: &OidcConfig,
+    provider: &Provider,
+    leeway: Duration,
+    token: &str,
+    expected_nonce: &str,
+) -> Result<Value, TokenError> {
+    let claims =
+        verify_with_audiences(cfg, provider, leeway, token, &[cfg.client_id.clone()]).await?;
+    if !crate::flow::nonce_matches(&claims, expected_nonce) {
+        return Err(TokenError::Invalid(
+            "the id token's nonce does not match this login attempt".into(),
+        ));
+    }
+    Ok(claims)
+}
+
 async fn verify_jwt(
     cfg: &OidcConfig,
     provider: &Provider,
     leeway: Duration,
     token: &str,
+) -> Result<Value, TokenError> {
+    verify_with_audiences(cfg, provider, leeway, token, &cfg.accepted_audiences()).await
+}
+
+async fn verify_with_audiences(
+    cfg: &OidcConfig,
+    provider: &Provider,
+    leeway: Duration,
+    token: &str,
+    audiences: &[String],
 ) -> Result<Value, TokenError> {
     let header = decode_header(token)
         .map_err(|e| TokenError::Invalid(format!("this is not a readable JWT: {e}")))?;
@@ -113,7 +151,7 @@ async fn verify_jwt(
     validation.validate_exp = true;
     validation.validate_nbf = true;
     validation.set_issuer(&[cfg.issuer.trim_end_matches('/')]);
-    validation.set_audience(&cfg.accepted_audiences());
+    validation.set_audience(audiences);
 
     let data =
         decode::<Value>(token, &key, &validation).map_err(|e| TokenError::Invalid(describe(&e)))?;

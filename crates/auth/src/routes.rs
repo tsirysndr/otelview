@@ -206,13 +206,38 @@ async fn callback(
         }
     };
 
-    let principal = match principal::from_claims(&auth.config, &claims, Credential::Session) {
+    let mut principal = match principal::from_claims(&auth.config, &claims, Credential::Session) {
         Ok(p) => p,
         Err(denied) => {
             tracing::info!(reason = %denied, "a valid login was denied access");
             return problem(StatusCode::FORBIDDEN, &denied.to_string());
         }
     };
+
+    // The id token is what says who this is, and its nonce is what ties
+    // it to the login this server started. A provider that sent one and
+    // cannot have it verified is a replay, not a formality.
+    if let Some(id_token) = &tokens.id_token {
+        match crate::token::verify_id_token(
+            &auth.config,
+            &auth.provider,
+            std::time::Duration::from_secs(60),
+            id_token,
+            &pending.nonce,
+        )
+        .await
+        {
+            Ok(id_claims) => principal.enrich_display(&id_claims),
+            Err(e) => {
+                tracing::warn!(error = %e, "the id token did not verify");
+                return problem(
+                    StatusCode::UNAUTHORIZED,
+                    "The identity token for this login did not verify. Start again from \
+                     /auth/login.",
+                );
+            }
+        }
+    }
 
     tracing::info!(
         subject = %principal.subject,

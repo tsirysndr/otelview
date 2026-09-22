@@ -136,6 +136,25 @@ impl Principal {
     pub fn label(&self) -> &str {
         &self.subject
     }
+
+    /// Fill in who this is from an id token's claims.
+    ///
+    /// Display fields only. Authorization stays on the access token, so
+    /// a session and an API call with the same account resolve to the
+    /// same permissions rather than to whichever token was richer.
+    ///
+    /// Needed because an access token is not obliged to carry `name` or
+    /// `email` — Zitadel does not — and a status bar showing a numeric
+    /// subject id helps nobody.
+    pub fn enrich_display(&mut self, id_token_claims: &Value) {
+        if self.name.is_none() {
+            self.name = string_claim(id_token_claims, "name")
+                .or_else(|| string_claim(id_token_claims, "preferred_username"));
+        }
+        if self.email.is_none() {
+            self.email = string_claim(id_token_claims, "email");
+        }
+    }
 }
 
 /// Why a set of claims does not yield a principal.
@@ -481,6 +500,35 @@ mod tests {
         let claims = json!({"sub": "u", "preferred_username": "ada"});
         let p = from_claims(&OidcConfig::default(), &claims, Credential::Session).unwrap();
         assert_eq!(p.name.as_deref(), Some("ada"));
+    }
+
+    #[test]
+    fn display_fields_come_from_the_id_token_when_the_access_token_lacks_them() {
+        // Exactly what Zitadel issues: an access token with roles and no
+        // profile, an id token with the profile.
+        let access = json!({
+            "sub": "u",
+            "urn:zitadel:iam:org:project:roles": {"otelview.admin": {}}
+        });
+        let mut p = from_claims(&cfg(), &access, Credential::Session).unwrap();
+        assert!(p.name.is_none() && p.email.is_none());
+
+        p.enrich_display(&json!({"name": "Ada Lovelace", "email": "ada@example.com"}));
+        assert_eq!(p.name.as_deref(), Some("Ada Lovelace"));
+        assert_eq!(p.email.as_deref(), Some("ada@example.com"));
+        // And it is display only: the role is still the access token's.
+        assert_eq!(p.role, Role::Admin);
+    }
+
+    /// The access token wins where it said something, so one token
+    /// cannot quietly rename the user the other identified.
+    #[test]
+    fn enriching_never_overwrites_what_was_already_there() {
+        let access = json!({"sub": "u", "name": "From Access", "email": "access@example.com"});
+        let mut p = from_claims(&OidcConfig::default(), &access, Credential::Session).unwrap();
+        p.enrich_display(&json!({"name": "From Id", "email": "id@example.com"}));
+        assert_eq!(p.name.as_deref(), Some("From Access"));
+        assert_eq!(p.email.as_deref(), Some("access@example.com"));
     }
 
     #[test]
