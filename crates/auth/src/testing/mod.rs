@@ -36,6 +36,10 @@ pub struct TokenRecipe {
     /// The nonce to echo in the id token, as a real provider echoes the
     /// one it was given in the authorization request.
     pub nonce: Option<String>,
+    /// Claims that appear in the id token only. Real providers put the
+    /// profile here and not in the access token, so tests can only tell
+    /// the two apart if the mock can too.
+    pub id_only: Value,
     /// Answer the token endpoint with an error instead.
     pub fail: Option<String>,
 }
@@ -71,6 +75,7 @@ impl MockIdp {
             kid: TEST_KID.to_string(),
             opaque: None,
             nonce: None,
+            id_only: json!({}),
             fail: None,
         }));
         let token_requests = Arc::new(Mutex::new(Vec::new()));
@@ -108,11 +113,26 @@ impl MockIdp {
         recipe.kid = TEST_KID.to_string();
     }
 
+    /// Claims for an access token shaped the way Zitadel shapes one: the
+    /// roles and the audience, and no profile at all.
+    pub fn roles_only_claims(&self, sub: &str, audience: &str, roles: Value) -> Value {
+        let mut claims = self.user_claims(sub, audience, roles);
+        let obj = claims.as_object_mut().expect("claims are an object");
+        obj.remove("name");
+        obj.remove("email");
+        claims
+    }
+
     /// Echo this nonce in the next id token. A provider does this with
     /// whatever arrived in the authorization request; the tests pull it
     /// out of the redirect and hand it back the same way.
     pub fn will_echo_nonce(&self, nonce: &str) {
         self.recipe.lock().unwrap().nonce = Some(nonce.to_string());
+    }
+
+    /// Put these claims in the id token and nowhere else.
+    pub fn will_issue_profile(&self, claims: Value) {
+        self.recipe.lock().unwrap().id_only = claims;
     }
 
     pub fn will_issue_opaque(&self, token: &str) {
@@ -223,6 +243,11 @@ async fn token(State(state): State<IdpState>, body: String) -> Json<Value> {
     let mut id_claims = recipe.claims.clone();
     if let Some(nonce) = &recipe.nonce {
         id_claims["nonce"] = json!(nonce);
+    }
+    if let Some(extra) = recipe.id_only.as_object() {
+        for (k, v) in extra {
+            id_claims[k] = v.clone();
+        }
     }
     Json(json!({
         "access_token": access_token,

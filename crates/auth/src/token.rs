@@ -7,6 +7,7 @@
 //! on every request. Zitadel issues either, depending on how the app is
 //! configured; JWTs are preferred and the code says so.
 
+use std::slice;
 use std::time::Duration;
 
 use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, Validation};
@@ -94,8 +95,15 @@ pub async fn verify_id_token(
     token: &str,
     expected_nonce: &str,
 ) -> Result<Value, TokenError> {
-    let claims =
-        verify_with_audiences(cfg, provider, leeway, token, &[cfg.client_id.clone()]).await?;
+    // An id token is addressed to this client, not to the API audience.
+    let claims = verify_with_audiences(
+        cfg,
+        provider,
+        leeway,
+        token,
+        slice::from_ref(&cfg.client_id),
+    )
+    .await?;
     if !crate::flow::nonce_matches(&claims, expected_nonce) {
         return Err(TokenError::Invalid(
             "the id token's nonce does not match this login attempt".into(),

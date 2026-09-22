@@ -211,11 +211,11 @@ async fn the_display_name_comes_from_the_id_token() {
     let cfg = config(&idp);
     let (app, _) = app(&cfg).await;
 
-    // An access token with roles and no profile, as Zitadel issues.
-    let mut claims = idp.user_claims("ada", "otelview", json!({"otelview.admin": {}}));
-    claims["name"] = Value::Null;
-    claims["email"] = Value::Null;
-    let cookie = sign_in(&app, &idp, claims).await;
+    // Roles and audience in the access token; the profile only in the
+    // id token — which is exactly how Zitadel splits them.
+    idp.will_issue_profile(json!({"name": "Ada Lovelace", "email": "ada@example.com"}));
+    let access = idp.roles_only_claims("ada", "otelview", json!({"otelview.admin": {}}));
+    let cookie = sign_in(&app, &idp, access).await;
 
     let (_, _, body) = send(
         &app,
@@ -226,9 +226,10 @@ async fn the_display_name_comes_from_the_id_token() {
     )
     .await;
     let me: Value = serde_json::from_str(&body).unwrap();
-    // The mock signs the id token from the same claims, so this asserts
-    // the pathway rather than the value: null in, null out, and the
-    // subject is still what identifies the session.
+    // The name could only have come from the id token.
+    assert_eq!(me["name"], "Ada Lovelace", "{body}");
+    assert_eq!(me["email"], "ada@example.com");
+    // And authorization still rests on the access token.
     assert_eq!(me["subject"], "ada");
     assert_eq!(me["role"], "admin");
 }
