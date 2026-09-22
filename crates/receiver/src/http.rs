@@ -404,7 +404,7 @@ mod tests {
         let auth = Auth {
             header: "x-otelview-token".into(),
             token: Some("sekret".into()),
-            protect_api: false,
+            ..Default::default()
         };
         let app = router(storage.clone(), &auth);
 

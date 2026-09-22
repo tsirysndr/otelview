@@ -6,6 +6,7 @@ members = [
     "crates/storage",
     "crates/receiver",
     "crates/api",
+    "crates/auth",
     "crates/mcp",
     "crates/otelview",
 ]
@@ -22,6 +23,7 @@ otelview-config = { path = "crates/config" }
 otelview-storage = { path = "crates/storage" }
 otelview-receiver = { path = "crates/receiver" }
 otelview-api = { path = "crates/api" }
+otelview-auth = { path = "crates/auth" }
 otelview-mcp = { path = "crates/mcp" }
 
 anyhow = "1"
@@ -77,6 +79,19 @@ reqwest = { version = "0.12", default-features = false, features = [
     "gzip",
     "rustls-tls",
 ] }
+# Identity: otelview is an OIDC relying party, so it verifies tokens and
+# reads claims. Everything else — SAML, MFA, passkeys, user management —
+# belongs to the provider it delegates to.
+# `rust_crypto` rather than aws-lc-rs: this binary cross-compiles to three
+# targets and is linked statically, and a pure-Rust backend keeps a C
+# toolchain out of that.
+jsonwebtoken = { version = "11", default-features = false, features = [
+    "rust_crypto",
+    "use_pem",
+] }
+base64 = "0.23"
+sha2 = "0.11"
+hmac = "0.13"
 
 [profile.release]
 lto = "thin"

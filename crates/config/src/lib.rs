@@ -68,6 +68,8 @@ pub struct Auth {
     pub header: String,
     pub token: Option<String>,
     pub protect_api: bool,
+    /// Single sign-on. Off unless a deployment turns it on.
+    pub oidc: OidcConfig,
 }
 
 impl Default for Auth {
@@ -76,6 +78,7 @@ impl Default for Auth {
             header: "x-otelview-token".into(),
             token: None,
             protect_api: false,
+            oidc: OidcConfig::default(),
         }
     }
 }
@@ -87,6 +90,236 @@ impl Auth {
             .map(|t| !t.is_empty())
             .unwrap_or(false)
     }
+}
+
+/// Environment override for [`OidcConfig::client_secret`], so the secret
+/// need not live in a file on disk.
+pub const OIDC_CLIENT_SECRET_ENV: &str = "OTELVIEW_OIDC_CLIENT_SECRET";
+
+/// OpenID Connect single sign-on for the web UI, the query API and MCP.
+///
+/// otelview is a relying party here, not an identity provider: it verifies
+/// tokens and reads claims. SAML federation, multi-factor, passkeys and
+/// user management belong to whatever sits at `issuer` — Zitadel is what
+/// this was built against — and otelview inherits all of it by delegating
+/// login rather than reimplementing any of it.
+///
+/// Disabled by default. A local otelview needs no identity provider, and
+/// standing one up is a deployment decision rather than a default.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct OidcConfig {
+    pub enabled: bool,
+
+    /// Issuer URL, e.g. "https://auth.example.com". Discovery reads
+    /// `<issuer>/.well-known/openid-configuration`; every other endpoint
+    /// comes from there rather than being configured separately.
+    pub issuer: String,
+    pub client_id: String,
+    /// Confidential clients only. The browser flow uses PKCE and does not
+    /// need one; token introspection does. `OTELVIEW_OIDC_CLIENT_SECRET`
+    /// overrides it.
+    pub client_secret: Option<String>,
+
+    /// Accepted `aud` values on an access token. Empty means "the client
+    /// id", which is what a provider issues by default.
+    pub audiences: Vec<String>,
+    /// Scopes requested at login. With Zitadel, adding
+    /// `urn:zitadel:iam:org:project:id:<project>:aud` is what makes the
+    /// access token a JWT this server can verify without a round trip.
+    pub scopes: Vec<String>,
+
+    /// Absolute URL of this server's callback, registered with the
+    /// provider: "https://otelview.example.com/auth/callback".
+    pub redirect_url: String,
+    /// Where the browser lands after logout. Defaults to the UI root.
+    pub post_logout_redirect_url: Option<String>,
+
+    /// Claim carrying the user's roles. The default is Zitadel's.
+    pub role_claim: String,
+    /// Roles granting read access. Empty means any authenticated user,
+    /// which is the right default for a single-team instance and the wrong
+    /// one for a shared provider — set it there.
+    pub viewer_roles: Vec<String>,
+    /// Roles additionally granting administrative access.
+    pub admin_roles: Vec<String>,
+    /// Restrict sign-in to these organisations, by the id in
+    /// `organisation_claim`. Empty allows any the provider admits.
+    pub allowed_organizations: Vec<String>,
+    /// Claim carrying the organisation id. The default is Zitadel's.
+    pub organization_claim: String,
+
+    /// Ask the provider to validate opaque access tokens (RFC 7662).
+    /// Needed when the provider issues opaque tokens rather than JWTs;
+    /// requires `client_secret`.
+    pub introspection: bool,
+
+    /// How often the signing keys are re-fetched. An unknown key id also
+    /// forces a refresh, rate-limited to once per interval, so key
+    /// rotation is picked up without waiting for this.
+    pub jwks_refresh_interval: String,
+    /// Tolerance for clock difference when checking `exp` and `nbf`.
+    pub clock_skew_leeway: String,
+
+    /// How long a browser session lives before requiring a fresh login.
+    pub session_ttl: String,
+    pub session_cookie: String,
+    /// Set `Secure` on the session cookie. Leave on except for local http
+    /// testing — off means the cookie travels in clear text.
+    pub secure_cookies: bool,
+
+    /// Keep accepting `ui.token`/`auth.token` beside SSO, for CI and
+    /// scripts that cannot do an interactive login.
+    pub allow_static_token: bool,
+
+    /// Permit a plain-http issuer on a host that is not loopback.
+    ///
+    /// Off, and worth leaving off: the authorization code and every token
+    /// would travel in clear text. It exists for a closed network being
+    /// tried out — `examples/zitadel` is exactly that — and otelview says
+    /// so, loudly, at every startup.
+    pub allow_insecure_issuer: bool,
+}
+
+impl Default for OidcConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            issuer: String::new(),
+            client_id: String::new(),
+            client_secret: None,
+            audiences: Vec::new(),
+            scopes: vec!["openid".into(), "profile".into(), "email".into()],
+            redirect_url: String::new(),
+            post_logout_redirect_url: None,
+            role_claim: "urn:zitadel:iam:org:project:roles".into(),
+            viewer_roles: Vec::new(),
+            admin_roles: Vec::new(),
+            allowed_organizations: Vec::new(),
+            organization_claim: "urn:zitadel:iam:org:id".into(),
+            introspection: false,
+            jwks_refresh_interval: "15m".into(),
+            clock_skew_leeway: "60s".into(),
+            session_ttl: "8h".into(),
+            session_cookie: "otelview_session".into(),
+            secure_cookies: true,
+            allow_static_token: true,
+            allow_insecure_issuer: false,
+        }
+    }
+}
+
+impl OidcConfig {
+    /// The client secret, from the environment if it is set there.
+    pub fn resolved_client_secret(&self) -> Option<String> {
+        std::env::var(OIDC_CLIENT_SECRET_ENV)
+            .ok()
+            .filter(|s| !s.trim().is_empty())
+            .or_else(|| self.client_secret.clone().filter(|s| !s.trim().is_empty()))
+    }
+
+    /// `<issuer>/.well-known/openid-configuration`, with no double slash
+    /// whichever way the issuer was written.
+    pub fn discovery_url(&self) -> String {
+        format!(
+            "{}/.well-known/openid-configuration",
+            self.issuer.trim_end_matches('/')
+        )
+    }
+
+    /// Token audiences to accept, defaulting to the client id.
+    pub fn accepted_audiences(&self) -> Vec<String> {
+        if self.audiences.is_empty() {
+            vec![self.client_id.clone()]
+        } else {
+            self.audiences.clone()
+        }
+    }
+
+    /// Everything that must hold before this can be used, checked at
+    /// startup so a half-configured provider fails loudly rather than at
+    /// the first login attempt.
+    pub fn validate(&self) -> Result<()> {
+        if !self.enabled {
+            return Ok(());
+        }
+        if self.issuer.trim().is_empty() {
+            bail!("auth.oidc.issuer must be set when auth.oidc.enabled is true");
+        }
+        if !self.issuer.starts_with("http://") && !self.issuer.starts_with("https://") {
+            bail!("auth.oidc.issuer must be an absolute http(s) URL");
+        }
+        if self.issuer.starts_with("http://")
+            && !is_loopback_url(&self.issuer)
+            && !self.allow_insecure_issuer
+        {
+            bail!(
+                "auth.oidc.issuer is plain http on a host that is not loopback, so tokens and \
+                 the authorization code would cross the network in clear text. Use https, or \
+                 set auth.oidc.allow_insecure_issuer = true if this is a closed network you \
+                 are testing on."
+            );
+        }
+        if self.client_id.trim().is_empty() {
+            bail!("auth.oidc.client_id must be set when auth.oidc.enabled is true");
+        }
+        if self.redirect_url.trim().is_empty() {
+            bail!("auth.oidc.redirect_url must be set when auth.oidc.enabled is true");
+        }
+        if !self.redirect_url.starts_with("http://") && !self.redirect_url.starts_with("https://") {
+            bail!("auth.oidc.redirect_url must be an absolute URL the provider can redirect to");
+        }
+        if self.introspection && self.resolved_client_secret().is_none() {
+            bail!(
+                "auth.oidc.introspection needs auth.oidc.client_secret (or                  {OIDC_CLIENT_SECRET_ENV}): introspection is an authenticated call"
+            );
+        }
+        parse_interval(&self.jwks_refresh_interval).context("auth.oidc.jwks_refresh_interval")?;
+        parse_interval(&self.clock_skew_leeway).context("auth.oidc.clock_skew_leeway")?;
+        parse_interval(&self.session_ttl).context("auth.oidc.session_ttl")?;
+        if self.session_cookie.trim().is_empty() {
+            bail!("auth.oidc.session_cookie must be set");
+        }
+        Ok(())
+    }
+}
+
+/// True for URLs whose host is loopback, where plain http is fine.
+fn is_loopback_url(url: &str) -> bool {
+    let rest = url.split_once("://").map(|(_, r)| r).unwrap_or(url);
+    let host = rest.split(['/', ':']).next().unwrap_or(rest);
+    matches!(host, "localhost" | "127.0.0.1" | "::1")
+        || host
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|ip| ip.is_loopback())
+}
+
+/// A short duration: `30s`, `5m`, `8h`, `7d`.
+///
+/// Separate from [`parse_duration`], which is the retention grammar and
+/// starts at hours — a session that lives a minimum of an hour is not a
+/// session, and a clock-skew tolerance measured in days is not a
+/// tolerance.
+pub fn parse_interval(raw: &str) -> Result<std::time::Duration> {
+    let s = raw.trim();
+    let (digits, unit) = s.split_at(
+        s.find(|c: char| !c.is_ascii_digit() && c != '.')
+            .with_context(|| format!("duration {raw:?} has no unit (try 30s, 5m, 8h)"))?,
+    );
+    let n: f64 = digits
+        .parse()
+        .with_context(|| format!("duration {raw:?} has no number (try 30s, 5m, 8h)"))?;
+    if n <= 0.0 {
+        bail!("duration {raw:?} must be positive");
+    }
+    let secs = match unit {
+        "s" => n,
+        "m" => n * 60.0,
+        "h" => n * 3600.0,
+        "d" => n * 86_400.0,
+        other => bail!("duration unit {other:?} not understood (s, m, h, d)"),
+    };
+    Ok(std::time::Duration::from_secs_f64(secs))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -378,6 +611,7 @@ impl Config {
         if self.receivers.http.enabled && self.receivers.http.listen.is_empty() {
             bail!("receivers.http.listen must be set when enabled");
         }
+        self.auth.oidc.validate()?;
         Ok(())
     }
 
@@ -395,6 +629,9 @@ impl Config {
         }
         if c.mcp.token.is_some() {
             c.mcp.token = Some("***".into());
+        }
+        if c.auth.oidc.client_secret.is_some() {
+            c.auth.oidc.client_secret = Some("***".into());
         }
 
         c
@@ -417,6 +654,120 @@ mod tests {
 
     fn env_guard() -> std::sync::MutexGuard<'static, ()> {
         ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    #[test]
+    fn oidc_is_off_by_default_and_validates_as_such() {
+        let c = Config::default();
+        assert!(!c.auth.oidc.enabled);
+        // Nothing is configured, and that is valid precisely because it is
+        // off — local dev must not need an identity provider.
+        c.validate().unwrap();
+    }
+
+    #[test]
+    fn enabling_oidc_demands_the_fields_it_cannot_invent() {
+        let mut c = Config::default();
+        c.auth.oidc.enabled = true;
+        let err = c.validate().unwrap_err().to_string();
+        assert!(err.contains("auth.oidc"), "{err}");
+
+        c.auth.oidc.issuer = "https://auth.example.com".into();
+        assert!(c.validate().unwrap_err().to_string().contains("client_id"));
+        c.auth.oidc.client_id = "otelview".into();
+        assert!(c
+            .validate()
+            .unwrap_err()
+            .to_string()
+            .contains("redirect_url"));
+        c.auth.oidc.redirect_url = "https://otelview.example.com/auth/callback".into();
+        c.validate().unwrap();
+    }
+
+    /// An issuer reached over plain http leaks the code and the tokens.
+    /// Loopback is the exception, because that is how you try it locally.
+    #[test]
+    fn a_plaintext_issuer_is_refused_unless_it_is_loopback() {
+        let mut c = Config::default();
+        c.auth.oidc.enabled = true;
+        c.auth.oidc.client_id = "otelview".into();
+        c.auth.oidc.redirect_url = "http://localhost:4319/auth/callback".into();
+
+        c.auth.oidc.issuer = "http://auth.example.com".into();
+        assert!(c.validate().unwrap_err().to_string().contains("clear text"));
+
+        c.auth.oidc.issuer = "http://localhost:8080".into();
+        c.validate().unwrap();
+        c.auth.oidc.issuer = "http://127.0.0.1:8080".into();
+        c.validate().unwrap();
+    }
+
+    #[test]
+    fn introspection_without_a_secret_is_refused() {
+        let mut c = Config::default();
+        c.auth.oidc.enabled = true;
+        c.auth.oidc.issuer = "https://auth.example.com".into();
+        c.auth.oidc.client_id = "otelview".into();
+        c.auth.oidc.redirect_url = "https://otelview.example.com/auth/callback".into();
+        c.auth.oidc.introspection = true;
+        assert!(c
+            .validate()
+            .unwrap_err()
+            .to_string()
+            .contains("client_secret"));
+        c.auth.oidc.client_secret = Some("s3cret".into());
+        c.validate().unwrap();
+    }
+
+    #[test]
+    fn oidc_defaults_read_as_zitadel() {
+        let c = OidcConfig::default();
+        assert_eq!(c.role_claim, "urn:zitadel:iam:org:project:roles");
+        assert_eq!(c.organization_claim, "urn:zitadel:iam:org:id");
+        assert_eq!(
+            c.scopes,
+            vec!["openid".to_string(), "profile".into(), "email".into()]
+        );
+        assert!(c.secure_cookies);
+    }
+
+    #[test]
+    fn discovery_and_audiences_are_derived() {
+        let mut c = OidcConfig {
+            issuer: "https://auth.example.com/".into(),
+            client_id: "otelview".into(),
+            ..Default::default()
+        };
+        assert_eq!(
+            c.discovery_url(),
+            "https://auth.example.com/.well-known/openid-configuration"
+        );
+        // Unset audiences mean "this client", which is what a provider
+        // issues by default.
+        assert_eq!(c.accepted_audiences(), vec!["otelview".to_string()]);
+        c.audiences = vec!["otelview-api".into()];
+        assert_eq!(c.accepted_audiences(), vec!["otelview-api".to_string()]);
+    }
+
+    #[test]
+    fn the_oidc_client_secret_is_redacted() {
+        let mut c = Config::default();
+        c.auth.oidc.client_secret = Some("s3cret".into());
+        assert_eq!(
+            c.sanitized().auth.oidc.client_secret.as_deref(),
+            Some("***")
+        );
+    }
+
+    #[test]
+    fn short_durations_parse_in_seconds_and_minutes() {
+        assert_eq!(parse_interval("30s").unwrap().as_secs(), 30);
+        assert_eq!(parse_interval("5m").unwrap().as_secs(), 300);
+        assert_eq!(parse_interval("8h").unwrap().as_secs(), 28_800);
+        assert_eq!(parse_interval("1.5h").unwrap().as_secs(), 5_400);
+        assert!(parse_interval("0s").is_err());
+        assert!(parse_interval("5").is_err());
+        assert!(parse_interval("5y").is_err());
     }
 
     #[test]
