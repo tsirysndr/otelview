@@ -38,7 +38,12 @@ The simplest way to inspect OpenTelemetry data on your own infrastructure: one s
 
 - **All three signals**: trace search + waterfall, live log tail with a severity histogram, metrics explorer with multi-series charts and query functions (rate, increase, sum/avg/min/max across series).
 - **APM built in**: a service dependency map and per-service RED metrics (request rate, error rate, p50/p95/p99 latency) derived live from your traces.
-- **KQL log search** (Kibana-style): `http.method:POST and status_code:>=500`, quoted phrases, wildcards, numeric comparisons, `and`/`or`/`not` — with **syntax highlighting**, **context-aware autocomplete** (field names, then live top values after the `:`) and a discovered-fields sidebar. The trace attribute filter gets the same highlighted, autocompleting editor.
+- **Three query languages**, all parsed in Rust and evaluated as predicates over records — so they work identically on every storage backend, including the remote ones that can't express rich filters themselves:
+  - **KQL** (Kibana-style, logs): `http.method:POST and status_code:>=500` — quoted phrases, wildcards, numeric comparisons, `and`/`or`/`not`;
+  - **TraceQL** (Grafana Tempo-style, traces): `{ status = error && duration > 100ms }`, `{ name = "charge" } && { .http.method = "GET" }` — spanset selectors with `span.`/`resource.`/bare attributes, the intrinsics (`name`, `duration`, `status`, `kind`, `rootName`, `rootServiceName`, `traceDuration`), `=~`/`!~` regex and `count`/`avg`/`sum`/`min`/`max` aggregates;
+  - **Lucene** (logs **and** traces): `http.method:POST AND http.status_code:[500 TO *]` — terms, phrases, `?`/`*` wildcards, fuzzy `~n`, proximity, ranges, `+`/`-`, `AND`/`OR`/`NOT` and grouping. A trace matches when any one of its spans does.
+
+  Every mode gets **syntax highlighting** and **context-aware autocomplete** (field names, then live top values after the `:`), and each keeps its own text so toggling between languages is lossless. Logs also get a discovered-fields sidebar.
 - **OTLP in, both transports**: gRPC (`:4317`) and HTTP (`:4318`), protobuf **and** JSON, gzip supported, optional header-token auth.
 - **Storage your way**:
   - `memory` — bounded ring buffers, zero setup;
@@ -181,11 +186,11 @@ export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
 
 ## Screenshots
 
-**Traces** — search with a latency scatter plot, then drill into the waterfall:
+**Traces** — search by attributes, TraceQL or Lucene with a latency scatter plot, then drill into the waterfall:
 
 ![traces](.github/assets/traces.png)
 
-**Logs** — live tail with KQL search, fields sidebar and trace correlation:
+**Logs** — live tail with KQL or Lucene search, fields sidebar and trace correlation:
 
 ![logs](.github/assets/logs.png)
 
