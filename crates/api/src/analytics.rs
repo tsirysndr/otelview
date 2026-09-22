@@ -10,12 +10,12 @@ use std::collections::BTreeMap;
 use anyhow::Context;
 use otelview_model::{LogQuery, LogRecord, SpanRecord, TraceQuery};
 use otelview_storage::DynStorage;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// Cap on how many traces are loaded per analytics request.
 pub const MAX_TRACES: usize = 250;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServiceStats {
     pub service: String,
     pub span_count: u64,
@@ -30,7 +30,7 @@ pub struct ServiceStats {
     pub p99_ms: f64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GraphNode {
     pub service: String,
     pub span_count: u64,
@@ -38,7 +38,7 @@ pub struct GraphNode {
     pub avg_ms: f64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GraphEdge {
     pub source: String,
     pub target: String,
@@ -47,14 +47,14 @@ pub struct GraphEdge {
     pub avg_ms: f64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServiceGraph {
     pub nodes: Vec<GraphNode>,
     pub edges: Vec<GraphEdge>,
     pub sampled_traces: usize,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FieldInfo {
     pub name: String,
     pub count: u64,
@@ -144,7 +144,48 @@ pub async fn trace_fields(
     Ok(summarize_fields(kvs.into_iter(), 50))
 }
 
-#[derive(Debug, Serialize)]
+/// How many logs field discovery samples.
+const FIELD_SAMPLE_LOGS: usize = 2000;
+
+/// Kibana-style field discovery: flattened attribute keys with counts and
+/// top values, from a sample of matching logs. `service`, `level` and
+/// `scope` are synthesised so the sidebar can facet on them like any other
+/// field, which is also how the query languages address them.
+pub async fn log_fields(
+    storage: &DynStorage,
+    service: Option<String>,
+    min_severity: Option<i32>,
+    time_min_unix_nano: Option<u64>,
+    time_max_unix_nano: Option<u64>,
+) -> anyhow::Result<Vec<FieldInfo>> {
+    let logs = storage
+        .query_logs(LogQuery {
+            service,
+            min_severity: min_severity.filter(|s| *s > 0),
+            search: None,
+            trace_id: None,
+            time_min_unix_nano,
+            time_max_unix_nano,
+            limit: FIELD_SAMPLE_LOGS,
+        })
+        .await?;
+    let mut kvs: Vec<(String, String)> = Vec::new();
+    for l in &logs {
+        kvs.push(("service".into(), l.service_name.clone()));
+        kvs.push((
+            "level".into(),
+            otelview_model::severity_level(l.severity_number).to_string(),
+        ));
+        if !l.scope_name.is_empty() {
+            kvs.push(("scope".into(), l.scope_name.clone()));
+        }
+        flatten_json("", &l.attributes, &mut kvs);
+        flatten_json("", &l.resource_attributes, &mut kvs);
+    }
+    Ok(summarize_fields(kvs.into_iter(), 50))
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LogBucket {
     pub time_unix_nano: u64,
     pub trace: u64,

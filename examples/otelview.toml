@@ -30,3 +30,11 @@ auth_header = "x-otelview-token"
 listen = "127.0.0.1:4319"
 cors = true
 # token = "ui-sekret"      # optional: require this token to use the web UI
+
+[mcp]
+enabled = true             # serve MCP for AI agents on the UI port
+path = "/mcp"
+# Bearer token required on every MCP request. Unset falls back to
+# ui.token, then auth.token when protect_api is on. OTELVIEW_MCP_TOKEN
+# overrides it, so the secret need not live in this file.
+# token = "agent-sekret"
