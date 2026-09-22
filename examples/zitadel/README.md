@@ -39,6 +39,12 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 your-app
 
 To tear it down, including the data: `docker compose down -v`.
 
+Bumping the pinned Zitadel image on an existing volume can fail its
+migrations — the database is still laid out for the version that made it,
+and Zitadel exits rather than guess. For a laptop the fix is
+`docker compose down -v` and a clean start; for anything you care about,
+read Zitadel's upgrade notes for the versions you are crossing.
+
 ### Why a hostname instead of localhost
 
 An access token carries its issuer's URL and otelview checks it. The

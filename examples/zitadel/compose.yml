@@ -46,7 +46,7 @@ services:
       - shared:/shared
 
   zitadel:
-    image: ghcr.io/zitadel/zitadel:v4.6.2
+    image: ghcr.io/zitadel/zitadel:v4.18.0
     # `start-from-init` creates the database schema and the first instance
     # on a fresh volume, and is a no-op on an existing one.
     command: >
