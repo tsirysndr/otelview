@@ -1,0 +1,73 @@
+# Written by provision.sh with this instance's real ids. Everything here
+# is otelview's normal configuration — the only section that exists
+# because of Zitadel is [auth.oidc], and it is off in the default config.
+
+[receivers.grpc]
+enabled = true
+listen = "0.0.0.0:4317"
+
+[receivers.http]
+enabled = true
+listen = "0.0.0.0:4318"
+
+[storage]
+backend = "duckdb"
+retention = "7d"
+
+[storage.duckdb]
+path = "/data/otelview.duckdb"
+
+[ui]
+listen = "0.0.0.0:4319"
+cors = true
+
+[auth.oidc]
+enabled = true
+issuer = "@ISSUER@"
+client_id = "@CLIENT_ID@"
+
+# Both, because Zitadel addresses a token to whatever the caller asked
+# for. A browser login through this app arrives with the app's client id;
+# a service account using the project audience scope arrives with the
+# project id. Listing both means one instance serves people and agents.
+audiences = ["@CLIENT_ID@", "@PROJECT_ID@"]
+redirect_url = "@REDIRECT@"
+post_logout_redirect_url = "@POST_LOGOUT@"
+
+# The last scope is the important one. It asks Zitadel to address the
+# access token to this project and to put the project's roles in it;
+# without it the token is for Zitadel's own API, carries no roles, and
+# otelview refuses it as addressed to somebody else.
+scopes = [
+    "openid",
+    "profile",
+    "email",
+    # Address the token to this project, and carry its roles.
+    "urn:zitadel:iam:org:project:id:@PROJECT_ID@:aud",
+    "urn:zitadel:iam:org:projects:roles",
+]
+
+# Who may in, and as what. Both roles are created by provision.sh and
+# granted in the Zitadel console (Organization → Projects → otelview →
+# Authorizations) as people join.
+viewer_roles = ["otelview.viewer"]
+admin_roles = ["otelview.admin"]
+
+# Plain http on one machine, so the Secure flag would stop the cookie
+# being sent at all. In production this stays true and the site is behind
+# TLS — see docs/deployment.md.
+secure_cookies = false
+
+# Zitadel is reached over the compose network on plain http, so the token
+# and the authorization code never leave the machine. otelview refuses a
+# plaintext issuer unless told explicitly, and warns at every startup.
+# In production this line goes away and the issuer is https.
+allow_insecure_issuer = true
+
+# No shared token beside SSO: everyone arrives through Zitadel, which is
+# the point of running it.
+allow_static_token = false
+
+[mcp]
+enabled = true
+path = "/mcp"

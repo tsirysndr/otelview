@@ -1,0 +1,142 @@
+# otelview behind Zitadel: single sign-on, roles, MFA and passkeys.
+#
+#   1. Add one line to /etc/hosts, so `zitadel` means the same thing to
+#      your browser and to the containers:
+#
+#          127.0.0.1 zitadel
+#
+#   2. docker compose up -d
+#   3. Open http://localhost:4319 and sign in.
+#
+# The admin created below is admin@otelview.localhost / Password1! — change
+# it before this is anywhere but your laptop. Everything here is set up for
+# plain http on one machine; the production guide (docs/deployment.md) is
+# the version with TLS, real secrets and a real domain.
+#
+# Why `zitadel` rather than `localhost`: an access token carries the
+# issuer's URL, and otelview checks it. The containers reach Zitadel over
+# the compose network and your browser reaches it through a published
+# port, so the two have to agree on one name — and `localhost` means
+# something different inside a container.
+
+name: otelview-zitadel
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: zitadel
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - db:/var/lib/postgresql/data
+
+  # The Zitadel image runs as a non-root user, and a fresh named volume
+  # belongs to root. One chown before anything starts, rather than running
+  # Zitadel as root to work around it.
+  prepare:
+    image: alpine:3.21
+    command: ["sh", "-c", "chown -R 1000:1000 /shared && chmod 775 /shared"]
+    volumes:
+      - shared:/shared
+
+  zitadel:
+    image: ghcr.io/zitadel/zitadel:v4.6.2
+    # `start-from-init` creates the database schema and the first instance
+    # on a fresh volume, and is a no-op on an existing one.
+    command: >
+      start-from-init
+      --masterkey ${ZITADEL_MASTERKEY:-MasterkeyNeedsToHave32Characters}
+      --tlsMode disabled
+    environment:
+      ZITADEL_DATABASE_POSTGRES_HOST: db
+      ZITADEL_DATABASE_POSTGRES_PORT: 5432
+      ZITADEL_DATABASE_POSTGRES_DATABASE: zitadel
+      ZITADEL_DATABASE_POSTGRES_USER_USERNAME: zitadel
+      ZITADEL_DATABASE_POSTGRES_USER_PASSWORD: zitadel
+      ZITADEL_DATABASE_POSTGRES_USER_SSL_MODE: disable
+      ZITADEL_DATABASE_POSTGRES_ADMIN_USERNAME: postgres
+      ZITADEL_DATABASE_POSTGRES_ADMIN_PASSWORD: postgres
+      ZITADEL_DATABASE_POSTGRES_ADMIN_SSL_MODE: disable
+      # The name in every token's `iss`, and the one otelview is
+      # configured with. Both sides must say it the same way.
+      ZITADEL_EXTERNALDOMAIN: zitadel
+      ZITADEL_EXTERNALPORT: 8080
+      ZITADEL_EXTERNALSECURE: false
+      ZITADEL_TLS_ENABLED: false
+      # The first human, who will own the instance.
+      ZITADEL_FIRSTINSTANCE_ORG_NAME: otelview
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_USERNAME: admin@otelview.localhost
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORD: ${ZITADEL_ADMIN_PASSWORD:-Password1!}
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORDCHANGEREQUIRED: false
+      # A machine user whose personal access token the provisioning step
+      # uses to create the project, roles and application.
+      ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_USERNAME: provisioner
+      ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_NAME: provisioner
+      ZITADEL_FIRSTINSTANCE_ORG_MACHINE_PAT_EXPIRATIONDATE: "2100-01-01T00:00:00Z"
+      ZITADEL_FIRSTINSTANCE_PATPATH: /shared/provisioner.pat
+    depends_on:
+      db:
+        condition: service_healthy
+      prepare:
+        condition: service_completed_successfully
+    ports:
+      - "8080:8080"
+    volumes:
+      - shared:/shared
+    healthcheck:
+      test:
+        - CMD
+        - /app/zitadel
+        - ready
+        - --config
+        - /dev/null
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  # Creates the otelview project, its roles and its OIDC application, then
+  # writes the config otelview starts with. Runs once and exits; `up`
+  # waits for it because otelview cannot start without a client id.
+  provision:
+    image: alpine:3.21
+    depends_on:
+      zitadel:
+        condition: service_healthy
+    volumes:
+      - shared:/shared
+      - ./provision.sh:/provision.sh:ro
+      - ./otelview.toml.template:/otelview.toml.template:ro
+    environment:
+      ZITADEL_BASE: http://zitadel:8080
+      OTELVIEW_BASE: http://localhost:4319
+      ADMIN_USERNAME: admin@otelview.localhost
+    entrypoint: ["/bin/sh", "/provision.sh"]
+
+  otelview:
+    # Override with a locally built image: OTELVIEW_IMAGE=otelview:dev
+    image: ${OTELVIEW_IMAGE:-ghcr.io/tsirysndr/otelview:latest}
+    depends_on:
+      provision:
+        condition: service_completed_successfully
+    command: ["-c", "/shared/otelview.toml"]
+    environment:
+      # Keeps the secret out of the config file on the shared volume.
+      OTELVIEW_OIDC_CLIENT_SECRET: ""
+    ports:
+      - "4317:4317" # OTLP gRPC
+      - "4318:4318" # OTLP HTTP
+      - "4319:4319" # web UI, query API and MCP
+    volumes:
+      - shared:/shared
+      - data:/data
+
+volumes:
+  db:
+  shared:
+  data:

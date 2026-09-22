@@ -30,6 +30,7 @@ The simplest way to inspect OpenTelemetry data on your own infrastructure: one s
 - [Screenshots](#screenshots)
 - [MCP: otelview for AI agents](#mcp-otelview-for-ai-agents)
 - [Skills](#skills)
+- [Single sign-on](#single-sign-on)
 - [Configuration](#configuration)
 - [The remote-storage APIs](#the-remote-storage-apis)
 - [Development](#development)
@@ -46,6 +47,7 @@ The simplest way to inspect OpenTelemetry data on your own infrastructure: one s
   - **Lucene** (logs **and** traces): `http.method:POST AND http.status_code:[500 TO *]` — terms, phrases, `?`/`*` wildcards, fuzzy `~n`, proximity, ranges, `+`/`-`, `AND`/`OR`/`NOT` and grouping. A trace matches when any one of its spans does.
 
   Every mode gets **syntax highlighting** and **context-aware autocomplete** (field names, then live top values after the `:`), and each keeps its own text so toggling between languages is lossless. Logs also get a discovered-fields sidebar.
+- **Single sign-on, when you want it**: OIDC with PKCE, roles mapped to viewer/admin RBAC, and sessions in an HttpOnly cookie — so SAML federation, MFA and passkeys come from your identity provider rather than from otelview. Off by default; a laptop needs no identity provider. [`examples/zitadel/`](examples/zitadel/) is a working setup in one `docker compose up`.
 - **An MCP server built in**: every query above is also a tool an AI agent can call — 17 of them, plus the query-language references and ready-made investigations. A running otelview *is* an MCP server (`/mcp` on the UI port, behind a bearer token), and `otelview mcp` speaks stdio for desktop clients. [Details below](#mcp-otelview-for-ai-agents).
 - **OTLP in, both transports**: gRPC (`:4317`) and HTTP (`:4318`), protobuf **and** JSON, gzip supported, optional header-token auth.
 - **Storage your way**:
@@ -299,6 +301,37 @@ npx skills add tsirysndr/otelview-skills
 | `otelview-instrument` | Pointing an application's OpenTelemetry SDK (or an existing Collector) at otelview, and verifying the data arrived |
 | `otelview-operate` | Running an instance: storage backends, retention, tokens, deployment, composition |
 
+## Single sign-on
+
+otelview can sit behind an OpenID Connect provider. It is a relying party:
+it verifies tokens and enforces roles, while passwords, second factors,
+passkeys, SAML federation and user management stay with the provider — so
+turning on MFA there turns it on here, with no otelview change.
+
+```toml
+[auth.oidc]
+enabled = true
+issuer = "https://auth.example.com"
+client_id = "otelview-web"
+redirect_url = "https://otelview.example.com/auth/callback"
+viewer_roles = ["otelview.viewer"]   # read telemetry
+admin_roles  = ["otelview.admin"]    # and read the configuration
+```
+
+Authorization code with PKCE, the session in an HttpOnly cookie that never
+carries the token, roles read from the provider's claim, and the same
+bearer tokens accepted on the API and on MCP. Agents discover where to get
+one through RFC 9728 metadata on a 401. Disabled by default, so local
+development needs nothing.
+
+Three ways in, depending on where you are starting:
+
+| | |
+| --- | --- |
+| [`examples/zitadel/`](examples/zitadel/) | Self-hosted Zitadel, otelview behind it, in one `docker compose up` |
+| [Zitadel Cloud guide](docs/zitadel-cloud.md) | The hosted version, click by click and through the API |
+| [Deployment guide](docs/deployment.md) | TLS, roles, agents, backups — production in general |
+
 ## Configuration
 
 YAML or TOML — the extension decides. Print all defaults with `otelview --print-config`.
@@ -313,6 +346,13 @@ auth:
   header: x-otelview-token     # metadata key / HTTP header
   token: sekret                # unset = auth disabled
   protect_api: false           # also require the token on the query API
+  oidc:                        # single sign-on; see docs/deployment.md
+    enabled: false
+    # issuer: https://auth.example.com
+    # client_id: otelview-web
+    # redirect_url: https://otelview.example.com/auth/callback
+    # viewer_roles: [otelview.viewer]
+    # admin_roles: [otelview.admin]
 
 storage:
   backend: duckdb              # memory | duckdb | jaeger | remote

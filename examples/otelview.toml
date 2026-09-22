@@ -31,6 +31,19 @@ listen = "127.0.0.1:4319"
 cors = true
 # token = "ui-sekret"      # optional: require this token to use the web UI
 
+# Single sign-on. Off by default; the whole section can be omitted.
+# A complete, runnable setup lives in examples/zitadel/.
+# [auth.oidc]
+# enabled = true
+# issuer = "https://auth.example.com"
+# client_id = "otelview-web"
+# redirect_url = "https://otelview.example.com/auth/callback"
+# scopes = ["openid", "profile", "email"]
+# viewer_roles = ["otelview.viewer"]
+# admin_roles = ["otelview.admin"]
+# OTELVIEW_OIDC_CLIENT_SECRET overrides client_secret, for confidential
+# clients and token introspection.
+
 [mcp]
 enabled = true             # serve MCP for AI agents on the UI port
 path = "/mcp"
