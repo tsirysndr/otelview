@@ -53,7 +53,11 @@ pub enum Cond {
     And(Box<Cond>, Box<Cond>),
     Or(Box<Cond>, Box<Cond>),
     Not(Box<Cond>),
-    Cmp { field: Field, op: Op, value: Val },
+    Cmp {
+        field: Field,
+        op: Op,
+        value: Val,
+    },
     /// A bare field reference: true when the attribute is present.
     Exists(Field),
 }
@@ -314,9 +318,7 @@ fn read_number(chars: &[char], start: usize) -> Result<(Tok, usize), String> {
         i += 1;
     }
     let num: String = chars[start..i].iter().collect();
-    let n: f64 = num
-        .parse()
-        .map_err(|_| format!("invalid number {num:?}"))?;
+    let n: f64 = num.parse().map_err(|_| format!("invalid number {num:?}"))?;
 
     let unit_start = i;
     while i < chars.len() && chars[i].is_alphabetic() {
@@ -658,9 +660,7 @@ fn eval_expr(expr: &Expr, spans: &[SpanRecord], ctx: &Ctx) -> bool {
             if matched.is_empty() {
                 return false;
             }
-            set.aggregates
-                .iter()
-                .all(|a| eval_agg(a, &matched, ctx))
+            set.aggregates.iter().all(|a| eval_agg(a, &matched, ctx))
         }
     }
 }
@@ -925,7 +925,9 @@ mod tests {
         assert!(!matches(r#"{ name = "GET /" && status = error }"#));
         assert!(matches(r#"{ name = "GET /" || status = error }"#));
         assert!(matches(r#"{ !(name = "charge") }"#));
-        assert!(matches(r#"{ (name = "charge" || name = "GET /") && duration > 10ms }"#));
+        assert!(matches(
+            r#"{ (name = "charge" || name = "GET /") && duration > 10ms }"#
+        ));
     }
 
     #[test]
@@ -989,6 +991,8 @@ mod tests {
                 "expected a clear unsupported-syntax error for {q:?}, got {err:?}"
             );
         }
-        assert!(parse("{} | by(name) > 1").unwrap_err().contains("not supported"));
+        assert!(parse("{} | by(name) > 1")
+            .unwrap_err()
+            .contains("not supported"));
     }
 }

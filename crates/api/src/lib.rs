@@ -12,8 +12,8 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
 use otelview_config::Config;
-use otelview_model::{LogQuery, LogRecord, MetricQuery, SpanRecord, TraceQuery};
 use otelview_storage::DynStorage;
+use query::{LogSearch, QueryError, SeriesSearch, TraceSearch, Window, DEFAULT_HISTOGRAM_BUCKETS};
 use rust_embed::RustEmbed;
 use serde::Deserialize;
 use tower_http::cors::CorsLayer;
@@ -21,6 +21,7 @@ use tower_http::cors::CorsLayer;
 pub mod analytics;
 pub mod kql;
 pub mod lucene;
+pub mod query;
 pub mod seriesfns;
 pub mod traceql;
 
@@ -35,13 +36,18 @@ pub struct ApiState {
 }
 
 /// Serve the UI + API. Runs until aborted.
-pub async fn serve(cfg: &Config, storage: DynStorage) -> Result<()> {
+///
+/// `extra` is merged in at the root, under the same auth as `/api`: it is
+/// how the MCP endpoint gets mounted without this crate having to know what
+/// MCP is (the mcp crate depends on this one, so the arrow cannot point the
+/// other way).
+pub async fn serve(cfg: &Config, storage: DynStorage, extra: Option<Router>) -> Result<()> {
     let addr: std::net::SocketAddr = cfg
         .ui
         .listen
         .parse()
         .with_context(|| format!("invalid ui listen address {}", cfg.ui.listen))?;
-    let router = router(cfg, storage);
+    let router = router_with(cfg, storage, extra);
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .with_context(|| format!("binding UI/API server to {addr}"))?;
@@ -52,6 +58,10 @@ pub async fn serve(cfg: &Config, storage: DynStorage) -> Result<()> {
 }
 
 pub fn router(cfg: &Config, storage: DynStorage) -> Router {
+    router_with(cfg, storage, None)
+}
+
+pub fn router_with(cfg: &Config, storage: DynStorage, extra: Option<Router>) -> Router {
     let state = ApiState {
         storage,
         config: Arc::new(cfg.clone()),
@@ -76,7 +86,13 @@ pub fn router(cfg: &Config, storage: DynStorage) -> Router {
     if cfg.ui.auth_enabled() || (cfg.auth.enabled() && cfg.auth.protect_api) {
         api = api.layer(axum::middleware::from_fn_with_state(state, require_token));
     }
-    let mut app = Router::new().nest("/api", api).fallback(static_handler);
+    // `extra` carries its own auth: it is also served standalone, where
+    // this router isn't in the picture, so the guard has to travel with it.
+    let mut app = Router::new().nest("/api", api);
+    if let Some(extra) = extra {
+        app = app.merge(extra);
+    }
+    let mut app = app.fallback(static_handler);
     if cfg.ui.cors {
         app = app.layer(CorsLayer::very_permissive());
     }
@@ -123,29 +139,21 @@ fn internal(e: anyhow::Error) -> Response {
     (StatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}")).into_response()
 }
 
-fn now_unix_nanos() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos() as u64)
-        .unwrap_or(0)
+/// A mistyped query is the user's to fix (400); a storage failure is ours
+/// (500). Both arrive here as one error, so the split happens once.
+fn query_failed(e: QueryError) -> Response {
+    match e {
+        QueryError::BadQuery(msg) => (StatusCode::BAD_REQUEST, msg).into_response(),
+        QueryError::Backend(e) => internal(e),
+    }
 }
 
-/// "30s", "15m", "6h", "7d" or plain seconds.
-fn parse_lookback(s: &str) -> Option<u64> {
-    let s = s.trim();
-    if s.is_empty() || s == "all" {
-        return None;
+/// Serialize a query result, or turn its error into a response.
+fn query_json<T: serde::Serialize>(r: Result<T, QueryError>) -> Response {
+    match r {
+        Ok(v) => Json(v).into_response(),
+        Err(e) => query_failed(e),
     }
-    let (num, mult) = match s.chars().last() {
-        Some('s') => (&s[..s.len() - 1], 1u64),
-        Some('m') => (&s[..s.len() - 1], 60),
-        Some('h') => (&s[..s.len() - 1], 3600),
-        Some('d') => (&s[..s.len() - 1], 86_400),
-        _ => (s, 1),
-    };
-    num.parse::<f64>()
-        .ok()
-        .map(|n| (n * mult as f64 * 1e9) as u64)
 }
 
 #[derive(Deserialize)]
@@ -171,93 +179,6 @@ async fn operations(State(state): State<ApiState>, Query(p): Query<ServiceParams
     }
 }
 
-/// How many candidate traces a TraceQL query pulls spans for before giving
-/// up. Each candidate costs one `get_trace`, so this bounds the work a single
-/// request can do; matching stops as soon as `limit` traces are found.
-const TRACEQL_SCAN_LIMIT: usize = 200;
-
-/// A log query in whichever language the request named.
-///
-/// Both parse to an AST and evaluate as a Rust predicate over fetched
-/// records rather than lowering to SQL, so either works over every storage
-/// backend and they can share one code path here.
-enum LogFilter {
-    Kql(kql::Expr),
-    Lucene(lucene::Query),
-}
-
-impl LogFilter {
-    /// `None` when neither param carries a query. KQL wins if a request
-    /// somehow sends both; the UI only ever sends the mode you are in.
-    fn parse(kql_q: Option<&str>, lucene_q: Option<&str>) -> Result<Option<Self>, String> {
-        if let Some(q) = nonempty(kql_q) {
-            return match kql::parse(q) {
-                Ok(expr) => Ok(expr.map(LogFilter::Kql)),
-                Err(e) => Err(bad_query("KQL", &e)),
-            };
-        }
-        if let Some(q) = nonempty(lucene_q) {
-            return match lucene::parse(q) {
-                Ok(expr) => Ok(expr.map(LogFilter::Lucene)),
-                Err(e) => Err(bad_query("Lucene", &e)),
-            };
-        }
-        Ok(None)
-    }
-
-    fn matches(&self, log: &LogRecord) -> bool {
-        match self {
-            LogFilter::Kql(expr) => kql::eval(expr, log),
-            LogFilter::Lucene(q) => lucene::eval(q, log),
-        }
-    }
-}
-
-/// A trace query in whichever language the request named.
-///
-/// TraceQL predicates on the spanset, so it sees the whole trace at once.
-/// Lucene has no notion of a spanset, so a trace matches when any single
-/// span does — the same rule a user gets from the logs view.
-enum TraceFilter {
-    TraceQl(traceql::Expr),
-    Lucene(lucene::Query),
-}
-
-impl TraceFilter {
-    fn parse(traceql_q: Option<&str>, lucene_q: Option<&str>) -> Result<Option<Self>, String> {
-        if let Some(q) = nonempty(traceql_q) {
-            return match traceql::parse(q) {
-                Ok(expr) => Ok(expr.map(TraceFilter::TraceQl)),
-                Err(e) => Err(bad_query("TraceQL", &e)),
-            };
-        }
-        if let Some(q) = nonempty(lucene_q) {
-            return match lucene::parse(q) {
-                Ok(expr) => Ok(expr.map(TraceFilter::Lucene)),
-                Err(e) => Err(bad_query("Lucene", &e)),
-            };
-        }
-        Ok(None)
-    }
-
-    fn matches(&self, spans: &[SpanRecord]) -> bool {
-        match self {
-            TraceFilter::TraceQl(expr) => traceql::eval(expr, spans),
-            TraceFilter::Lucene(q) => spans.iter().any(|s| lucene::eval(q, s)),
-        }
-    }
-}
-
-fn nonempty(s: Option<&str>) -> Option<&str> {
-    s.map(str::trim).filter(|s| !s.is_empty())
-}
-
-/// The parse-failure message, phrased so the user can see which language
-/// rejected what they typed.
-fn bad_query(lang: &str, err: &str) -> String {
-    format!("invalid {lang} query: {err}")
-}
-
 #[derive(Deserialize)]
 struct TraceParams {
     service: Option<String>,
@@ -280,59 +201,29 @@ struct TraceParams {
     limit: Option<usize>,
 }
 
-async fn traces(State(state): State<ApiState>, Query(p): Query<TraceParams>) -> Response {
-    let start_time_min_unix_nano = p.start_ms.map(|ms| ms * 1_000_000).or_else(|| {
-        p.lookback
-            .as_deref()
-            .and_then(parse_lookback)
-            .map(|window| now_unix_nanos().saturating_sub(window))
-    });
-    let start_time_max_unix_nano = p.end_ms.map(|ms| ms * 1_000_000);
-    let filter = match TraceFilter::parse(p.traceql.as_deref(), p.lucene.as_deref()) {
-        Ok(f) => f,
-        Err(msg) => return (StatusCode::BAD_REQUEST, msg).into_response(),
-    };
-    let limit = p.limit.unwrap_or(20).clamp(1, 500);
-    let q = TraceQuery {
-        service: p.service.filter(|s| !s.is_empty()),
-        operation: p.operation.filter(|s| !s.is_empty()),
-        attribute_query: p.q.filter(|s| !s.is_empty()),
-        min_duration_nanos: p.min_duration_ms.map(|ms| (ms * 1e6) as u64),
-        max_duration_nanos: p.max_duration_ms.map(|ms| (ms * 1e6) as u64),
-        start_time_min_unix_nano,
-        start_time_max_unix_nano,
-        errors_only: p.errors_only.unwrap_or(false),
-        // A span-level query needs a candidate pool to filter down from,
-        // since it predicates on spans the summary does not carry.
-        limit: match filter {
-            Some(_) => TRACEQL_SCAN_LIMIT.max(limit),
-            None => limit,
-        },
-    };
-    let candidates = match state.storage.find_traces(q).await {
-        Ok(t) => t,
-        Err(e) => return internal(e),
-    };
-    let Some(filter) = filter else {
-        return Json(candidates).into_response();
-    };
-    // Summaries come back newest-first, so taking the first `limit` matches
-    // gives the newest matching traces without scanning the whole pool.
-    let mut out = Vec::with_capacity(limit);
-    for summary in candidates {
-        match state.storage.get_trace(&summary.trace_id).await {
-            Ok(spans) => {
-                if filter.matches(&spans) {
-                    out.push(summary);
-                    if out.len() >= limit {
-                        break;
-                    }
-                }
-            }
-            Err(e) => return internal(e),
+impl From<TraceParams> for TraceSearch {
+    fn from(p: TraceParams) -> Self {
+        TraceSearch {
+            service: p.service,
+            operation: p.operation,
+            q: p.q,
+            traceql: p.traceql,
+            lucene: p.lucene,
+            min_duration_ms: p.min_duration_ms,
+            max_duration_ms: p.max_duration_ms,
+            errors_only: p.errors_only,
+            window: Window {
+                lookback: p.lookback,
+                start_ms: p.start_ms,
+                end_ms: p.end_ms,
+            },
+            limit: p.limit,
         }
     }
-    Json(out).into_response()
+}
+
+async fn traces(State(state): State<ApiState>, Query(p): Query<TraceParams>) -> Response {
+    query_json(query::search_traces(&state.storage, p.into()).await)
 }
 
 async fn trace_detail(State(state): State<ApiState>, Path(trace_id): Path<String>) -> Response {
@@ -359,13 +250,7 @@ async fn metric_exemplars(
     State(state): State<ApiState>,
     Query(p): Query<ExemplarParams>,
 ) -> Response {
-    let trace_id = p.trace_id.trim();
-    if trace_id.is_empty() || trace_id.chars().all(|c| c == '0') {
-        return Json(Vec::<otelview_model::ExemplarHit>::new()).into_response();
-    }
-    let span_id = p.span_id.as_deref().map(str::trim).filter(|s| !s.is_empty());
-    let limit = p.limit.unwrap_or(50).clamp(1, 500);
-    match state.storage.find_exemplars(trace_id, span_id, limit).await {
+    match query::find_exemplars(&state.storage, &p.trace_id, p.span_id.as_deref(), p.limit).await {
         Ok(hits) => Json(hits).into_response(),
         Err(e) => internal(e),
     }
@@ -388,76 +273,38 @@ struct LogParams {
     limit: Option<usize>,
 }
 
-async fn logs(State(state): State<ApiState>, Query(p): Query<LogParams>) -> Response {
-    let time_min_unix_nano = p.start_ms.map(|ms| ms * 1_000_000).or_else(|| {
-        p.lookback
-            .as_deref()
-            .and_then(parse_lookback)
-            .map(|window| now_unix_nanos().saturating_sub(window))
-    });
-    let time_max_unix_nano = p.end_ms.map(|ms| ms * 1_000_000);
-    let filter = match LogFilter::parse(p.kql.as_deref(), p.lucene.as_deref()) {
-        Ok(f) => f,
-        Err(msg) => return (StatusCode::BAD_REQUEST, msg).into_response(),
-    };
-    let limit = p.limit.unwrap_or(200).clamp(1, 5000);
-    let q = LogQuery {
-        service: p.service.filter(|s| !s.is_empty()),
-        min_severity: p.min_severity.filter(|s| *s > 0),
-        search: p.search.filter(|s| !s.is_empty()),
-        trace_id: p.trace_id.filter(|s| !s.is_empty()),
-        time_min_unix_nano,
-        time_max_unix_nano,
-        // With a query filter, over-fetch and filter down to the limit.
-        limit: if filter.is_some() { 5000 } else { limit },
-    };
-    match state.storage.query_logs(q).await {
-        Ok(mut l) => {
-            if let Some(filter) = filter {
-                l.retain(|log| filter.matches(log));
-                l.truncate(limit);
-            }
-            Json(l).into_response()
+impl From<LogParams> for LogSearch {
+    fn from(p: LogParams) -> Self {
+        LogSearch {
+            service: p.service,
+            min_severity: p.min_severity,
+            search: p.search,
+            kql: p.kql,
+            lucene: p.lucene,
+            trace_id: p.trace_id,
+            window: Window {
+                lookback: p.lookback,
+                start_ms: p.start_ms,
+                end_ms: p.end_ms,
+            },
+            limit: p.limit,
         }
-        Err(e) => internal(e),
     }
+}
+
+async fn logs(State(state): State<ApiState>, Query(p): Query<LogParams>) -> Response {
+    query_json(query::search_logs(&state.storage, p.into()).await)
 }
 
 /// Kibana-style field discovery: flattened attribute keys with counts and
 /// top values, from a sample of matching logs.
 async fn log_fields_handler(State(state): State<ApiState>, Query(p): Query<LogParams>) -> Response {
-    let time_min = p
-        .lookback
-        .as_deref()
-        .and_then(parse_lookback)
-        .map(|window| now_unix_nanos().saturating_sub(window));
-    let q = LogQuery {
-        service: p.service.filter(|s| !s.is_empty()),
-        min_severity: p.min_severity.filter(|s| *s > 0),
-        search: None,
-        trace_id: None,
-        time_min_unix_nano: p.start_ms.map(|ms| ms * 1_000_000).or(time_min),
-        time_max_unix_nano: p.end_ms.map(|ms| ms * 1_000_000),
-        limit: 2000,
-    };
-    let logs = match state.storage.query_logs(q).await {
-        Ok(l) => l,
-        Err(e) => return internal(e),
-    };
-    let mut kvs: Vec<(String, String)> = Vec::new();
-    for l in &logs {
-        kvs.push(("service".into(), l.service_name.clone()));
-        kvs.push((
-            "level".into(),
-            otelview_model::severity_level(l.severity_number).to_string(),
-        ));
-        if !l.scope_name.is_empty() {
-            kvs.push(("scope".into(), l.scope_name.clone()));
-        }
-        analytics::flatten_json("", &l.attributes, &mut kvs);
-        analytics::flatten_json("", &l.resource_attributes, &mut kvs);
+    let p: LogSearch = p.into();
+    let (min, max) = p.window.bounds();
+    match analytics::log_fields(&state.storage, p.service, p.min_severity, min, max).await {
+        Ok(v) => Json(v).into_response(),
+        Err(e) => internal(e),
     }
-    Json(analytics::summarize_fields(kvs.into_iter(), 50)).into_response()
 }
 
 #[derive(Deserialize)]
@@ -473,13 +320,12 @@ async fn trace_fields_handler(
     State(state): State<ApiState>,
     Query(p): Query<TraceFieldsParams>,
 ) -> Response {
-    let min = p.start_ms.map(|ms| ms * 1_000_000).or_else(|| {
-        p.lookback
-            .as_deref()
-            .and_then(parse_lookback)
-            .map(|w| now_unix_nanos().saturating_sub(w))
-    });
-    let max = p.end_ms.map(|ms| ms * 1_000_000);
+    let (min, max) = Window {
+        lookback: p.lookback,
+        start_ms: p.start_ms,
+        end_ms: p.end_ms,
+    }
+    .bounds();
     match analytics::trace_fields(
         &state.storage,
         p.service.filter(|s| !s.is_empty()),
@@ -515,33 +361,25 @@ struct SeriesParams {
     max_points: Option<usize>,
 }
 
-async fn metric_series(State(state): State<ApiState>, Query(p): Query<SeriesParams>) -> Response {
-    let time_min_unix_nano = p.start_ms.map(|ms| ms * 1_000_000).or_else(|| {
-        p.lookback
-            .as_deref()
-            .and_then(parse_lookback)
-            .map(|window| now_unix_nanos().saturating_sub(window))
-    });
-    let time_max_unix_nano = p.end_ms.map(|ms| ms * 1_000_000);
-    let q = MetricQuery {
-        name: p.name,
-        service: p.service.filter(|s| !s.is_empty()),
-        time_min_unix_nano,
-        time_max_unix_nano,
-        max_points: p.max_points.unwrap_or(500).clamp(10, 10_000),
-    };
-    match state.storage.query_metric_series(q).await {
-        Ok(mut series) => {
-            if let Some(func) = p.func.as_deref() {
-                seriesfns::apply_function(&mut series, func);
-            }
-            if let Some(agg) = p.agg.as_deref() {
-                series = seriesfns::aggregate(series, agg, 120);
-            }
-            Json(series).into_response()
+impl From<SeriesParams> for SeriesSearch {
+    fn from(p: SeriesParams) -> Self {
+        SeriesSearch {
+            name: p.name,
+            service: p.service,
+            func: p.func,
+            agg: p.agg,
+            window: Window {
+                lookback: p.lookback,
+                start_ms: p.start_ms,
+                end_ms: p.end_ms,
+            },
+            max_points: p.max_points,
         }
-        Err(e) => internal(e),
     }
+}
+
+async fn metric_series(State(state): State<ApiState>, Query(p): Query<SeriesParams>) -> Response {
+    query_json(query::metric_series(&state.storage, p.into()).await)
 }
 
 #[derive(Deserialize)]
@@ -553,13 +391,12 @@ struct WindowParams {
 
 impl WindowParams {
     fn bounds(&self) -> (Option<u64>, Option<u64>) {
-        let min = self.start_ms.map(|ms| ms * 1_000_000).or_else(|| {
-            self.lookback
-                .as_deref()
-                .and_then(parse_lookback)
-                .map(|w| now_unix_nanos().saturating_sub(w))
-        });
-        (min, self.end_ms.map(|ms| ms * 1_000_000))
+        Window {
+            lookback: self.lookback.clone(),
+            start_ms: self.start_ms,
+            end_ms: self.end_ms,
+        }
+        .bounds()
     }
 }
 
@@ -598,46 +435,33 @@ struct LogHistogramParams {
     buckets: Option<usize>,
 }
 
+/// The histogram shares the log search's shape so the chart and the list
+/// under it always filter on the same thing.
+impl From<LogHistogramParams> for LogSearch {
+    fn from(p: LogHistogramParams) -> Self {
+        LogSearch {
+            service: p.service,
+            min_severity: p.min_severity,
+            search: p.search,
+            kql: p.kql,
+            lucene: p.lucene,
+            trace_id: None,
+            window: Window {
+                lookback: p.lookback,
+                start_ms: p.start_ms,
+                end_ms: p.end_ms,
+            },
+            limit: None,
+        }
+    }
+}
+
 async fn log_histogram_handler(
     State(state): State<ApiState>,
     Query(p): Query<LogHistogramParams>,
 ) -> Response {
-    let time_min = p.start_ms.map(|ms| ms * 1_000_000).or_else(|| {
-        p.lookback
-            .as_deref()
-            .and_then(parse_lookback)
-            .map(|w| now_unix_nanos().saturating_sub(w))
-    });
-    let time_max = p.end_ms.map(|ms| ms * 1_000_000);
-    let q = LogQuery {
-        service: p.service.filter(|s| !s.is_empty()),
-        min_severity: p.min_severity.filter(|s| *s > 0),
-        search: p.search.filter(|s| !s.is_empty()),
-        trace_id: None,
-        time_min_unix_nano: time_min,
-        time_max_unix_nano: time_max,
-        limit: 0,
-    };
-    let filter = match LogFilter::parse(p.kql.as_deref(), p.lucene.as_deref()) {
-        Ok(f) => f,
-        Err(msg) => return (StatusCode::BAD_REQUEST, msg).into_response(),
-    };
-    let predicate = filter.map(|f| move |l: &LogRecord| f.matches(l));
-    match analytics::log_histogram(
-        &state.storage,
-        q,
-        p.buckets.unwrap_or(40),
-        time_min,
-        time_max,
-        predicate
-            .as_ref()
-            .map(|f| f as &(dyn Fn(&LogRecord) -> bool + Send + Sync)),
-    )
-    .await
-    {
-        Ok(v) => Json(v).into_response(),
-        Err(e) => internal(e),
-    }
+    let buckets = p.buckets.unwrap_or(DEFAULT_HISTOGRAM_BUCKETS);
+    query_json(query::log_histogram(&state.storage, p.into(), buckets).await)
 }
 
 async fn stats(State(state): State<ApiState>) -> Response {
@@ -711,7 +535,6 @@ mod tests {
     use http_body_util::BodyExt;
     use otelview_config::MemoryConfig;
     use otelview_storage::memory::MemoryStorage;
-    use otelview_storage::Storage;
     use serde_json::json;
     use tower::ServiceExt;
 
@@ -1156,8 +979,11 @@ mod tests {
         assert_eq!(v[0]["exemplar"]["value"], 12.5);
 
         // Narrowing to a span keeps only that span's metric.
-        let (_, v) =
-            get_json(app.clone(), "/api/metrics/exemplars?trace_id=aaa111&span_id=s2").await;
+        let (_, v) = get_json(
+            app.clone(),
+            "/api/metrics/exemplars?trace_id=aaa111&span_id=s2",
+        )
+        .await;
         assert_eq!(v.as_array().unwrap().len(), 1);
         assert_eq!(v[0]["metric_name"], "db.client.duration");
 
@@ -1193,15 +1019,22 @@ mod tests {
         let app = router(&cfg, storage);
 
         // `{ status = error }` keeps only the trace with the failing span.
-        let (status, v) = get_json(app.clone(), "/api/traces?traceql=%7B%20status%20%3D%20error%20%7D").await;
+        let (status, v) = get_json(
+            app.clone(),
+            "/api/traces?traceql=%7B%20status%20%3D%20error%20%7D",
+        )
+        .await;
         assert_eq!(status, StatusCode::OK);
         let got = v.as_array().unwrap();
         assert_eq!(got.len(), 1);
         assert_eq!(got[0]["trace_id"], "t-bad");
 
         // Duration predicate over span intrinsics.
-        let (status, v) =
-            get_json(app.clone(), "/api/traces?traceql=%7B%20duration%20%3E%20100ms%20%7D").await;
+        let (status, v) = get_json(
+            app.clone(),
+            "/api/traces?traceql=%7B%20duration%20%3E%20100ms%20%7D",
+        )
+        .await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(v.as_array().unwrap().len(), 1);
 
@@ -1215,8 +1048,11 @@ mod tests {
         assert_eq!(v.as_array().unwrap().len(), 1);
 
         // Nothing matches -> empty array, not an error.
-        let (status, v) =
-            get_json(app.clone(), "/api/traces?traceql=%7B%20status%20%3D%20ok%20%7D").await;
+        let (status, v) = get_json(
+            app.clone(),
+            "/api/traces?traceql=%7B%20status%20%3D%20ok%20%7D",
+        )
+        .await;
         assert_eq!(status, StatusCode::OK);
         assert!(v.as_array().unwrap().is_empty());
 
@@ -1346,14 +1182,17 @@ mod tests {
         assert_eq!(v.as_array().unwrap().len(), 3);
 
         // The histogram takes the same filter.
-        let (status, v) = get_json(app.clone(), "/api/logs/histogram?lucene=http.method%3AGET").await;
+        let (status, v) =
+            get_json(app.clone(), "/api/logs/histogram?lucene=http.method%3AGET").await;
         assert_eq!(status, StatusCode::OK);
         // Buckets count per severity; only the one GET log survives.
         let total: u64 = v
             .as_array()
             .unwrap()
             .iter()
-            .flat_map(|b| ["trace", "debug", "info", "warn", "error", "fatal"].map(|k| b[k].as_u64().unwrap()))
+            .flat_map(|b| {
+                ["trace", "debug", "info", "warn", "error", "fatal"].map(|k| b[k].as_u64().unwrap())
+            })
             .sum();
         assert_eq!(total, 1);
 
@@ -1391,14 +1230,5 @@ mod tests {
             .collect();
         assert!(names.contains(&"http.method"));
         assert!(names.contains(&"host.name"));
-    }
-
-    #[test]
-    fn lookback_parsing() {
-        assert_eq!(parse_lookback("30s"), Some(30_000_000_000));
-        assert_eq!(parse_lookback("15m"), Some(900_000_000_000));
-        assert_eq!(parse_lookback("2h"), Some(7_200_000_000_000));
-        assert_eq!(parse_lookback("all"), None);
-        assert_eq!(parse_lookback("90"), Some(90_000_000_000));
     }
 }

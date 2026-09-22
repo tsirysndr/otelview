@@ -15,6 +15,7 @@ pub struct Config {
     pub auth: Auth,
     pub storage: StorageConfig,
     pub ui: UiConfig,
+    pub mcp: McpConfig,
     pub log_level: Option<String>,
 }
 
@@ -268,6 +269,63 @@ impl UiConfig {
     }
 }
 
+/// The Model Context Protocol endpoint: the same queries the UI makes,
+/// exposed to an AI agent as tools.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct McpConfig {
+    /// Serve MCP on the UI port. The `otelview mcp` subcommand is the other
+    /// way in and does not need this.
+    pub enabled: bool,
+    /// Path the endpoint is mounted at.
+    pub path: String,
+    /// Bearer token required on every MCP request. Unset falls back to
+    /// `ui.token`, then to `auth.token` when `auth.protect_api` is on —
+    /// so locking the UI locks MCP with the same key, and this only exists
+    /// to give agents a token of their own.
+    ///
+    /// `OTELVIEW_MCP_TOKEN` overrides it, so the secret can come from the
+    /// environment instead of a file on disk.
+    pub token: Option<String>,
+}
+
+/// Environment override for [`McpConfig::token`].
+pub const MCP_TOKEN_ENV: &str = "OTELVIEW_MCP_TOKEN";
+
+impl Default for McpConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            path: "/mcp".into(),
+            token: None,
+        }
+    }
+}
+
+impl McpConfig {
+    /// The token an MCP request must present, or `None` when the endpoint
+    /// is open. Resolution order: `OTELVIEW_MCP_TOKEN`, `mcp.token`,
+    /// `ui.token`, then `auth.token` if it guards the query API.
+    pub fn resolved_token(&self, cfg: &Config) -> Option<String> {
+        if let Some(t) = std::env::var(MCP_TOKEN_ENV)
+            .ok()
+            .filter(|t| !t.trim().is_empty())
+        {
+            return Some(t);
+        }
+        let ingest = cfg
+            .auth
+            .protect_api
+            .then_some(cfg.auth.token.as_deref())
+            .flatten();
+        [self.token.as_deref(), cfg.ui.token.as_deref(), ingest]
+            .into_iter()
+            .flatten()
+            .find(|t| !t.is_empty())
+            .map(str::to_string)
+    }
+}
+
 impl Config {
     pub fn load(path: &Path) -> Result<Self> {
         let raw = std::fs::read_to_string(path)
@@ -335,6 +393,9 @@ impl Config {
         if c.ui.token.is_some() {
             c.ui.token = Some("***".into());
         }
+        if c.mcp.token.is_some() {
+            c.mcp.token = Some("***".into());
+        }
 
         c
     }
@@ -347,6 +408,64 @@ mod tests {
     #[test]
     fn defaults_are_valid() {
         Config::default().validate().unwrap();
+    }
+
+    /// `resolved_token` reads the environment, which is process-wide. The
+    /// tests that depend on it take turns, so one cannot observe another's
+    /// variable and fail at random.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn env_guard() -> std::sync::MutexGuard<'static, ()> {
+        ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    #[test]
+    fn mcp_is_on_by_default_and_open() {
+        let _guard = env_guard();
+        let c = Config::default();
+        assert!(c.mcp.enabled);
+        assert_eq!(c.mcp.path, "/mcp");
+        assert_eq!(c.mcp.resolved_token(&c), None);
+    }
+
+    /// Locking the UI has to lock MCP with it: an agent endpoint left open
+    /// beside a protected API hands out exactly what the lock is for.
+    #[test]
+    fn the_mcp_token_falls_back_to_the_ui_and_ingest_tokens() {
+        let _guard = env_guard();
+        let mut c = Config::default();
+        c.ui.token = Some("ui-sekret".into());
+        assert_eq!(c.mcp.resolved_token(&c).as_deref(), Some("ui-sekret"));
+
+        c.mcp.token = Some("agent-sekret".into());
+        assert_eq!(c.mcp.resolved_token(&c).as_deref(), Some("agent-sekret"));
+
+        let mut c = Config::default();
+        c.auth.token = Some("ingest-sekret".into());
+        // The ingest token only guards reads when it is asked to.
+        assert_eq!(c.mcp.resolved_token(&c), None);
+        c.auth.protect_api = true;
+        assert_eq!(c.mcp.resolved_token(&c).as_deref(), Some("ingest-sekret"));
+    }
+
+    #[test]
+    fn the_environment_overrides_the_configured_mcp_token() {
+        let _guard = env_guard();
+        let mut c = Config::default();
+        c.mcp.token = Some("from-file".into());
+        std::env::set_var(MCP_TOKEN_ENV, "from-env");
+        assert_eq!(c.mcp.resolved_token(&c).as_deref(), Some("from-env"));
+        // A blank value is not a token, and must not hide the file's.
+        std::env::set_var(MCP_TOKEN_ENV, "  ");
+        assert_eq!(c.mcp.resolved_token(&c).as_deref(), Some("from-file"));
+        std::env::remove_var(MCP_TOKEN_ENV);
+    }
+
+    #[test]
+    fn the_mcp_token_is_redacted() {
+        let mut c = Config::default();
+        c.mcp.token = Some("agent-sekret".into());
+        assert_eq!(c.sanitized().mcp.token.as_deref(), Some("***"));
     }
 
     #[test]

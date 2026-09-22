@@ -6,6 +6,7 @@ members = [
     "crates/storage",
     "crates/receiver",
     "crates/api",
+    "crates/mcp",
     "crates/otelview",
 ]
 
@@ -21,6 +22,7 @@ otelview-config = { path = "crates/config" }
 otelview-storage = { path = "crates/storage" }
 otelview-receiver = { path = "crates/receiver" }
 otelview-api = { path = "crates/api" }
+otelview-mcp = { path = "crates/mcp" }
 
 anyhow = "1"
 thiserror = "2"
@@ -56,12 +58,25 @@ sqlx = { version = "0.9", default-features = false, features = [
     "json",
 ] }
 rust-embed = "8"
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4", features = ["derive", "env"] }
 hex = "0.4"
 bytes = "1"
 flate2 = "1"
 mime = "0.3"
 rand = "0.9"
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+# MCP is JSON-RPC 2.0: jsonrpsee owns dispatch, params and error objects,
+# while the transports (stdio, HTTP) stay ours — server-core is the module
+# without the bundled listener.
+jsonrpsee = { version = "0.26", default-features = false, features = [
+    "server-core",
+    "jsonrpsee-types",
+] }
+reqwest = { version = "0.12", default-features = false, features = [
+    "json",
+    "gzip",
+    "rustls-tls",
+] }
 
 [profile.release]
 lto = "thin"

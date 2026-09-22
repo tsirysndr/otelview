@@ -1,7 +1,7 @@
 //! otelview — a fast, beautiful OpenTelemetry viewer in a single binary.
 
 use anyhow::{Context, Result};
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use otelview_config::Config;
 use std::path::PathBuf;
 
@@ -13,7 +13,7 @@ use std::path::PathBuf;
 )]
 struct Cli {
     /// Path to a YAML or TOML config file.
-    #[arg(short, long)]
+    #[arg(short, long, global = true)]
     config: Option<PathBuf>,
 
     /// Print the default configuration as YAML and exit.
@@ -21,11 +21,11 @@ struct Cli {
     print_config: bool,
 
     /// Override storage backend: memory | duckdb | jaeger | remote.
-    #[arg(long)]
+    #[arg(long, global = true)]
     storage: Option<String>,
 
     /// Override DuckDB database path (or ":memory:").
-    #[arg(long)]
+    #[arg(long, global = true)]
     duckdb_path: Option<String>,
 
     /// Override the UI/API listen address (e.g. 0.0.0.0:4319).
@@ -35,6 +35,39 @@ struct Cli {
     /// Require this token in the auth header on OTLP ingest.
     #[arg(long)]
     token: Option<String>,
+
+    #[command(subcommand)]
+    command: Option<Command>,
+}
+
+#[derive(Subcommand, Debug)]
+enum Command {
+    /// Run the Model Context Protocol server, exposing traces, logs and
+    /// metrics as tools for an AI agent.
+    ///
+    /// Speaks JSON-RPC over stdin/stdout by default, which is what desktop
+    /// AI clients launch. With --endpoint it queries a running otelview
+    /// over HTTP; without one it opens the configured storage directly,
+    /// which a DuckDB file cannot do while a server has it open.
+    Mcp {
+        /// Query the otelview running at this URL instead of opening
+        /// storage in this process, e.g. http://127.0.0.1:4319.
+        #[arg(long)]
+        endpoint: Option<String>,
+
+        /// Bearer token to send to --endpoint.
+        #[arg(long, env = "OTELVIEW_TOKEN", hide_env_values = true)]
+        api_token: Option<String>,
+
+        /// Serve MCP over HTTP at this address instead of on stdio.
+        /// A non-loopback address requires a token.
+        #[arg(long)]
+        http: Option<String>,
+
+        /// Path the HTTP endpoint is served at.
+        #[arg(long)]
+        path: Option<String>,
+    },
 }
 
 fn apply_overrides(cfg: &mut Config, cli: &Cli) -> Result<()> {
@@ -59,6 +92,32 @@ fn apply_overrides(cfg: &mut Config, cli: &Cli) -> Result<()> {
     cfg.validate()
 }
 
+fn load_config(cli: &Cli) -> Result<Config> {
+    let mut cfg = match &cli.config {
+        Some(path) => Config::load(path)?,
+        None => Config::default(),
+    };
+    apply_overrides(&mut cfg, cli)?;
+    Ok(cfg)
+}
+
+/// `to_stderr` is not a preference: on stdio, stdout carries JSON-RPC and
+/// a log line written there is a parse error in the client.
+fn init_tracing(cfg: &Config, to_stderr: bool) {
+    let filter = cfg
+        .log_level
+        .clone()
+        .unwrap_or_else(|| "info,tower_http=warn".to_string());
+    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(filter));
+    let builder = tracing_subscriber::fmt().with_env_filter(env_filter);
+    if to_stderr {
+        builder.with_writer(std::io::stderr).init();
+    } else {
+        builder.init();
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -68,26 +127,76 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
-    let mut cfg = match &cli.config {
-        Some(path) => Config::load(path)?,
-        None => Config::default(),
+    match &cli.command {
+        Some(Command::Mcp {
+            endpoint,
+            api_token,
+            http,
+            path,
+        }) => {
+            let cfg = load_config(&cli)?;
+            init_tracing(&cfg, true);
+            run_mcp(
+                cfg,
+                endpoint.clone(),
+                api_token.clone(),
+                http.clone(),
+                path.clone(),
+            )
+            .await
+        }
+        None => {
+            let cfg = load_config(&cli)?;
+            init_tracing(&cfg, false);
+            run_server(cfg).await
+        }
+    }
+}
+
+async fn run_mcp(
+    cfg: Config,
+    endpoint: Option<String>,
+    api_token: Option<String>,
+    http: Option<String>,
+    path: Option<String>,
+) -> Result<()> {
+    let mcp = match &endpoint {
+        Some(url) => {
+            tracing::info!(%url, "MCP server querying a remote otelview");
+            otelview_mcp::from_endpoint(url, api_token)?
+        }
+        None => {
+            tracing::info!(backend = ?cfg.storage.backend, "MCP server opening storage directly");
+            let storage = otelview_storage::make_storage(&cfg.storage).await.context(
+                "initializing storage backend (a DuckDB file cannot be opened twice — \
+                     use --endpoint to query a running otelview instead)",
+            )?;
+            let (mcp, _) = otelview_mcp::from_storage(&cfg, storage);
+            mcp
+        }
     };
-    apply_overrides(&mut cfg, &cli)?;
 
-    let filter = cfg
-        .log_level
-        .clone()
-        .unwrap_or_else(|| "info,tower_http=warn".to_string());
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(filter)),
-        )
-        .init();
+    let path = path.unwrap_or_else(|| cfg.mcp.path.clone());
+    match http {
+        Some(addr) => {
+            let addr: std::net::SocketAddr = addr
+                .parse()
+                .with_context(|| format!("invalid MCP listen address {addr}"))?;
+            let auth = otelview_mcp::http::Auth {
+                token: cfg.mcp.resolved_token(&cfg),
+                header: cfg.auth.header.clone(),
+            };
+            otelview_mcp::http::serve(mcp, addr, &path, auth).await
+        }
+        None => otelview_mcp::stdio::serve(mcp).await,
+    }
+}
 
+async fn run_server(cfg: Config) -> Result<()> {
     tracing::info!(
         backend = ?cfg.storage.backend,
         auth = cfg.auth.enabled(),
+        mcp = cfg.mcp.enabled,
         "starting otelview"
     );
 
@@ -130,10 +239,16 @@ async fn main() -> Result<()> {
         }));
     }
     {
+        // MCP rides on the UI port, guarded by its own token, so a running
+        // otelview *is* an MCP server with nothing else to start.
+        let mcp = otelview_mcp::mounted_router(&cfg, storage.clone());
+        if mcp.is_some() {
+            tracing::info!(path = %cfg.mcp.path, "MCP endpoint enabled");
+        }
         let cfg = cfg.clone();
         let storage = storage.clone();
         tasks.push(tokio::spawn(async move {
-            otelview_api::serve(&cfg, storage).await
+            otelview_api::serve(&cfg, storage, mcp).await
         }));
     }
 

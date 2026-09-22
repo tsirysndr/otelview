@@ -13,10 +13,10 @@ The simplest way to inspect OpenTelemetry data on your own infrastructure: one s
 ┌─────────────────────────────── otelview (one binary) ───────────────────────────────┐
 │                                                                                     │
 │  OTLP gRPC :4317 ──┐                                       ┌── web UI + REST :4319  │
-│  OTLP HTTP :4318 ──┼──► receivers ──► storage backend ◄────┤   (React, embedded)    │
-│  (proto & JSON,    │    (optional     memory │ duckdb      └── remote-storage gRPC  │
-│   gzip, header     │     header       jaeger │ remote          reader APIs on :4317 │
-│   auth)            │     auth)                                                      │
+│  OTLP HTTP :4318 ──┼──► receivers ──► storage backend ◄────┼── MCP /mcp  :4319      │
+│  (proto & JSON,    │    (optional     memory │ duckdb      │   (AI agents, tokened) │
+│   gzip, header     │     header       jaeger │ remote      └── remote-storage gRPC  │
+│   auth)            │     auth)                                 reader APIs on :4317 │
 └─────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -28,6 +28,8 @@ The simplest way to inspect OpenTelemetry data on your own infrastructure: one s
 - [Install](#install)
 - [Quickstart](#quickstart)
 - [Screenshots](#screenshots)
+- [MCP: otelview for AI agents](#mcp-otelview-for-ai-agents)
+- [Skills](#skills)
 - [Configuration](#configuration)
 - [The remote-storage APIs](#the-remote-storage-apis)
 - [Development](#development)
@@ -44,6 +46,7 @@ The simplest way to inspect OpenTelemetry data on your own infrastructure: one s
   - **Lucene** (logs **and** traces): `http.method:POST AND http.status_code:[500 TO *]` — terms, phrases, `?`/`*` wildcards, fuzzy `~n`, proximity, ranges, `+`/`-`, `AND`/`OR`/`NOT` and grouping. A trace matches when any one of its spans does.
 
   Every mode gets **syntax highlighting** and **context-aware autocomplete** (field names, then live top values after the `:`), and each keeps its own text so toggling between languages is lossless. Logs also get a discovered-fields sidebar.
+- **An MCP server built in**: every query above is also a tool an AI agent can call — 17 of them, plus the query-language references and ready-made investigations. A running otelview *is* an MCP server (`/mcp` on the UI port, behind a bearer token), and `otelview mcp` speaks stdio for desktop clients. [Details below](#mcp-otelview-for-ai-agents).
 - **OTLP in, both transports**: gRPC (`:4317`) and HTTP (`:4318`), protobuf **and** JSON, gzip supported, optional header-token auth.
 - **Storage your way**:
   - `memory` — bounded ring buffers, zero setup;
@@ -198,6 +201,104 @@ export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
 
 ![metrics](.github/assets/metrics.png)
 
+## MCP: otelview for AI agents
+
+otelview speaks the [Model Context Protocol](https://modelcontextprotocol.io),
+so an AI agent can read your telemetry with the same queries the UI makes —
+through the same code path, so the two can never disagree about what a
+search means.
+
+**Two ways in.** A running otelview already serves MCP at `/mcp` on the UI
+port. For desktop clients that launch a process and talk over pipes, the
+`mcp` subcommand speaks JSON-RPC on stdin/stdout:
+
+```sh
+# Query a running otelview over its API (works from anywhere)
+otelview mcp --endpoint http://127.0.0.1:4319
+
+# ...or open the configured storage directly, with no server running
+otelview mcp --storage duckdb --duckdb-path otelview.duckdb
+
+# ...or serve MCP over HTTP on its own port
+otelview mcp --endpoint http://127.0.0.1:4319 --http 127.0.0.1:4320
+```
+
+A DuckDB file can only be opened by one process, so use `--endpoint` while a
+server has it.
+
+**Claude Desktop / Claude Code / any MCP client:**
+
+```json
+{
+  "mcpServers": {
+    "otelview": {
+      "command": "otelview",
+      "args": ["mcp", "--endpoint", "http://127.0.0.1:4319"]
+    }
+  }
+}
+```
+
+For the HTTP endpoint instead, point the client at `http://127.0.0.1:4319/mcp`
+and send the token as `Authorization: Bearer …`.
+
+**17 tools**, covering everything the UI can ask:
+
+| | |
+| --- | --- |
+| Services | `list_services`, `list_operations`, `service_stats` (RED metrics), `service_graph` |
+| Traces | `search_traces` (TraceQL/Lucene/filters), `get_trace` (text waterfall), `list_trace_fields` |
+| Logs | `search_logs` (KQL/Lucene/filters), `log_histogram`, `list_log_fields` |
+| Metrics | `list_metrics`, `query_metric` (rate/increase, sum/avg/min/max), `find_exemplars` |
+| Cross-signal | `investigate_trace` — waterfall + error spans + correlated logs + exemplars in one call |
+| Meta | `storage_stats`, `get_config`, `query_syntax` (KQL/TraceQL/Lucene references) |
+
+Results come back twice: as `structuredContent` for the client to parse, and
+as text built for a reader — tables for lists, and a real waterfall for a
+trace:
+
+```
+3 spans over 800.0ms from 2026-09-22T16:39:46.973Z
+
+████████████████████████████████   800.0ms  gateway POST /checkout [00f067aa0ba902b7]
+  ████████████████████████         600.0ms    payments charge [00f067aa0ba902b8] ERROR: upstream timeout
+    █████                          120.0ms      db SELECT accounts [00f067aa0ba902b9]
+```
+
+There are also **resources** (the service list, the metric catalog, storage
+stats, config, and the three query-language references) and **prompts** —
+`investigate_errors`, `diagnose_latency`, `explain_trace`, `health_report` —
+each a plan the agent follows with the tools above.
+
+**Security.** Every tool is read-only; nothing in the protocol can modify or
+delete telemetry. The HTTP endpoint takes a bearer token from `mcp.token`,
+falling back to `ui.token` and then to `auth.token` when `protect_api` is on,
+so locking the UI locks MCP with the same key. `OTELVIEW_MCP_TOKEN` overrides
+all of them, keeping the secret out of the config file. The token is accepted
+as `Authorization: Bearer <token>` or in the `auth.header` header, and is
+compared in constant time. Serving MCP on a non-loopback address without a
+token is refused rather than done quietly, and requests carrying a browser
+`Origin` from anywhere but loopback are rejected — the DNS-rebinding
+mitigation the MCP spec asks for, which is what protects an open local
+endpoint from a web page. Set `mcp.enabled: false` to turn the endpoint off
+entirely.
+
+## Skills
+
+Agent skills for otelview live in their own repo,
+[tsirysndr/otelview-skills](https://github.com/tsirysndr/otelview-skills), in
+the format [skills.sh](https://skills.sh) and Claude Code read:
+
+```sh
+npx skills add tsirysndr/otelview-skills
+```
+
+| Skill | For |
+| --- | --- |
+| `otelview` | Investigating traces, logs and metrics through the MCP server — the query languages, reading a waterfall, correlating the three signals |
+| `otelview-instrument` | Pointing an application's OpenTelemetry SDK (or an existing Collector) at otelview, and verifying the data arrived |
+| `otelview-operate` | Running an instance: storage backends, retention, tokens, deployment, composition |
+
 ## Configuration
 
 YAML or TOML — the extension decides. Print all defaults with `otelview --print-config`.
@@ -236,6 +337,13 @@ ui:
   cors: true                   # allow the desktop app / other origins
   # token: ui-sekret           # optional: require a token to use the web UI
 
+mcp:
+  enabled: true                # serve MCP for AI agents on the UI port
+  path: /mcp
+  # token: agent-sekret        # bearer token; falls back to ui.token, then
+                               # auth.token when protect_api is on.
+                               # OTELVIEW_MCP_TOKEN overrides it.
+
 log_level: info
 ```
 
@@ -273,7 +381,7 @@ bun run storybook             # component workbench
 bun run tauri dev             # desktop shell (point Settings at a remote API)
 ```
 
-Crate layout: `crates/model` (records), `crates/config`, `crates/storage` (backends + protos), `crates/receiver` (OTLP in + reader servers), `crates/api` (REST + embedded UI), `crates/otelview` (binary). UI: React + Tailwind + HeroUI + Tabler icons, jotai state, VS Code-style layout, Night Rider dark theme.
+Crate layout: `crates/model` (records), `crates/config`, `crates/storage` (backends + protos), `crates/receiver` (OTLP in + reader servers), `crates/api` (REST + embedded UI, with the query layer both it and MCP run on), `crates/mcp` (the MCP server: jsonrpsee dispatch, tools, stdio + HTTP transports), `crates/otelview` (binary). UI: React + Tailwind + HeroUI + Tabler icons, jotai state, VS Code-style layout, Night Rider dark theme.
 
 ## Releases
 

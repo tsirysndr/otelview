@@ -146,7 +146,9 @@ fn normalize_otlp_json(v: &mut serde_json::Value) {
             }
             if let Some(Value::Array(exemplars)) = map.get_mut("exemplars") {
                 for e in exemplars.iter_mut() {
-                    let Some(obj) = e.as_object_mut() else { continue };
+                    let Some(obj) = e.as_object_mut() else {
+                        continue;
+                    };
                     obj.entry("filteredAttributes")
                         .or_insert_with(|| Value::Array(Vec::new()));
                     obj.entry("traceId")
@@ -273,7 +275,10 @@ mod tests {
     use opentelemetry_proto::tonic::metrics::v1::metric::Data;
 
     fn metrics_from_json(js: &'static str) -> ExportMetricsServiceRequest {
-        super::parse(&super::Payload::Json(bytes::Bytes::from_static(js.as_bytes()))).unwrap()
+        super::parse(&super::Payload::Json(bytes::Bytes::from_static(
+            js.as_bytes(),
+        )))
+        .unwrap()
     }
 
     /// OTLP/JSON sends int64 as a string. Accepting only numbers meant every
@@ -315,7 +320,10 @@ mod tests {
         assert_eq!(ex.len(), 1);
         use opentelemetry_proto::tonic::metrics::v1::exemplar::Value as EV;
         assert_eq!(ex[0].value, Some(EV::AsDouble(4.5)));
-        assert_eq!(hex::encode(&ex[0].trace_id), "aabbccddeeff00112233445566778899");
+        assert_eq!(
+            hex::encode(&ex[0].trace_id),
+            "aabbccddeeff00112233445566778899"
+        );
         assert_eq!(hex::encode(&ex[0].span_id), "0011223344556677");
     }
 
@@ -335,7 +343,6 @@ mod tests {
         use opentelemetry_proto::tonic::metrics::v1::exemplar::Value as EV;
         assert_eq!(g.data_points[0].exemplars[0].value, Some(EV::AsInt(99)));
     }
-
 
     use super::*;
     use axum::body::Body;
