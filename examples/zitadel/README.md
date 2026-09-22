@@ -24,9 +24,15 @@ Then:
 
 ```sh
 cd examples/zitadel
-docker compose up -d
+docker compose up -d               # the first run compiles otelview
 docker compose logs -f provision   # watch it create the project and app
 ```
+
+otelview is built from this repository rather than pulled, so the binary
+and the config the provisioning step writes always agree. The first run
+takes a few minutes to compile; Docker caches it afterwards. Once a
+published release includes single sign-on, `OTELVIEW_IMAGE=ghcr.io/tsirysndr/otelview:0.4.0
+docker compose up -d` skips the build.
 
 Open <http://localhost:4319> and sign in as **admin@otelview.localhost**
 with **Password1!**.
@@ -39,11 +45,34 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 your-app
 
 To tear it down, including the data: `docker compose down -v`.
 
+**`{"code": 5, "message": "Not Found"}` from Zitadel** at
+`/ui/v2/login/...` means the login container is not running, or the core
+has not been told where it is. Zitadel v4 requires Login V2 and serves it
+from a *separate* image; the core only redirects. `provision.sh` sets the
+`loginV2.baseUri` feature to point at it — re-run it if you changed ports.
+
+**`unknown field \`oidc\`` from otelview** means the binary is older than
+the config — an image published before single sign-on existed. Let the
+compose file build from source (the default) or point `OTELVIEW_IMAGE` at
+a release that has it.
+
 Bumping the pinned Zitadel image on an existing volume can fail its
 migrations — the database is still laid out for the version that made it,
 and Zitadel exits rather than guess. For a laptop the fix is
 `docker compose down -v` and a clean start; for anything you care about,
 read Zitadel's upgrade notes for the versions you are crossing.
+
+What runs:
+
+| Container | Port | |
+| --- | --- | --- |
+| `zitadel` | 8080 | The identity provider's API and console |
+| `login` | 3000 | Zitadel v4's login UI, which is a separate image |
+| `otelview` | 4319 | The UI, query API and MCP; 4317/4318 for OTLP |
+| `db` | — | Postgres, for Zitadel |
+
+The browser reaches both `zitadel:8080` and `zitadel:3000`, which is what
+the `/etc/hosts` line is for.
 
 ### Why a hostname instead of localhost
 
@@ -60,6 +89,7 @@ afterwards. It creates:
 
 | | |
 | --- | --- |
+| Login V2 base URI | Where the core sends browsers to sign in — a separate container in v4 |
 | Project `otelview` | What the roles and the app belong to |
 | Roles `otelview.viewer`, `otelview.admin` | Exactly the strings `viewer_roles` and `admin_roles` match on |
 | OIDC app `otelview-web` | Public client, authorization code + PKCE, JWT access tokens |

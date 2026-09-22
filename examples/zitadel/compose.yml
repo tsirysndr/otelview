@@ -100,6 +100,31 @@ services:
       timeout: 5s
       retries: 30
 
+  # Zitadel v4 serves its login UI from a separate container, and the
+  # core only redirects to it. Without this the browser lands on
+  # /ui/v2/login/... and gets {"code": 5, "message": "Not Found"} — the
+  # core does not serve that path itself.
+  #
+  # It reads the same personal access token the provisioning step uses,
+  # and waits for the file, so ordering takes care of itself.
+  login:
+    image: ghcr.io/zitadel/zitadel-login:v4.18.0
+    environment:
+      ZITADEL_API_URL: http://zitadel:8080
+      ZITADEL_SERVICE_USER_TOKEN_FILE: /shared/provisioner.pat
+      # `/ui/v2/login` is baked into this image's build, so it serves
+      # there whatever port it is published on. provision.sh tells the
+      # core the same URL.
+    depends_on:
+      zitadel:
+        condition: service_healthy
+    ports:
+      # Reachable by the browser at the same hostname as Zitadel, which
+      # is what the /etc/hosts line above is for.
+      - "3000:3000"
+    volumes:
+      - shared:/shared
+
   # Creates the otelview project, its roles and its OIDC application, then
   # writes the config otelview starts with. Runs once and exits; `up`
   # waits for it because otelview cannot start without a client id.
@@ -119,8 +144,18 @@ services:
     entrypoint: ["/bin/sh", "/provision.sh"]
 
   otelview:
-    # Override with a locally built image: OTELVIEW_IMAGE=otelview:dev
-    image: ${OTELVIEW_IMAGE:-ghcr.io/tsirysndr/otelview:latest}
+    # Built from this repository rather than pulled. Single sign-on is
+    # newer than the last published image, and an image that cannot read
+    # `[auth.oidc]` fails here with "unknown field `oidc`" — the config
+    # the provisioning step writes has to match the binary reading it.
+    #
+    # The first run compiles otelview and takes a few minutes; after that
+    # Docker caches it. Point OTELVIEW_IMAGE at a tag once a release
+    # includes SSO: OTELVIEW_IMAGE=ghcr.io/tsirysndr/otelview:0.4.0
+    image: ${OTELVIEW_IMAGE:-otelview:local}
+    build:
+      context: ../..
+      dockerfile: Dockerfile
     depends_on:
       provision:
         condition: service_completed_successfully

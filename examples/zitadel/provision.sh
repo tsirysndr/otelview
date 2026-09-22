@@ -14,6 +14,10 @@ ADMIN_USERNAME="${ADMIN_USERNAME:-admin@otelview.localhost}"
 PROJECT_NAME="${PROJECT_NAME:-otelview}"
 APP_NAME="${APP_NAME:-otelview-web}"
 SERVICE_USER="${SERVICE_USER:-otelview-agent}"
+# Where the browser reaches the Login V2 container.
+# The `/ui/v2/login` suffix is baked into the login container's build,
+# so it serves there whatever port it is on.
+LOGIN_BASE="${LOGIN_BASE:-http://zitadel:3000/ui/v2/login}"
 OUT="${OUT:-/shared/otelview.toml}"
 # Overridable so this runs outside the compose file too — against Zitadel
 # Cloud, say, where the token is one you made in the console.
@@ -82,6 +86,16 @@ until api GET /management/v1/projects/_search '{}' | jq -e '.result? // .details
   fi
   sleep 2
 done
+
+# ------------------------------------------------------------ login ui
+# v4 requires the Login V2 UI, which is a separate container. The core
+# only redirects to it, so it has to be told where that container is —
+# otherwise the browser is sent to a path the core does not serve and
+# gets a bare {"code": 5, "message": "Not Found"}.
+api PUT /v2/features/instance "$(
+  jq -nc --arg uri "$LOGIN_BASE" '{loginV2:{required:true,baseUri:$uri}}'
+)" >/dev/null || echo "warning: could not point Zitadel at the login UI" >&2
+echo "login UI at $LOGIN_BASE"
 
 # ---------------------------------------------------------------- project
 project_id="$(
