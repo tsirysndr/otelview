@@ -71,7 +71,12 @@ fn log(i: usize) -> LogRecord {
         time_unix_nano: t,
         observed_time_unix_nano: t,
         severity_number: if i.is_multiple_of(40) { 17 } else { 9 },
-        severity_text: if i.is_multiple_of(40) { "ERROR" } else { "INFO" }.into(),
+        severity_text: if i.is_multiple_of(40) {
+            "ERROR"
+        } else {
+            "INFO"
+        }
+        .into(),
         body: json!(format!(
             "http request {} handled in {}ms",
             ROUTES[i % ROUTES.len()],
