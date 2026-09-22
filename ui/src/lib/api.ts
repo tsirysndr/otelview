@@ -200,7 +200,38 @@ async function request<T>(path: string, params?: Record<string, unknown>): Promi
   return resp.json() as Promise<T>;
 }
 
+/** How this server expects you to sign in. Public: the login screen has
+ * to be able to ask before anyone has signed in. */
+export interface AuthInfo {
+  mode: "none" | "token" | "oidc";
+  login_url?: string;
+  issuer?: string;
+  static_token_accepted: boolean;
+}
+
+export interface Me {
+  authenticated: boolean;
+  subject?: string;
+  name?: string | null;
+  email?: string | null;
+  organization?: string | null;
+  roles?: string[];
+  role?: "viewer" | "admin";
+  via?: "session" | "bearer_token" | "static_token";
+  permissions?: {
+    read_telemetry: boolean;
+    read_config: boolean;
+    use_mcp: boolean;
+    administer: boolean;
+  };
+  reason?: string;
+}
+
 export const api = {
+  /** Not under /api: these are served whether or not SSO is configured,
+   * and must stay reachable without a credential. */
+  authInfo: () => request<AuthInfo>("/auth/info"),
+  me: () => request<Me>("/auth/me"),
   services: () => request<string[]>("/api/services"),
   operations: (service: string) =>
     request<string[]>("/api/operations", { service }),

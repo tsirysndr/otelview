@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useAtomValue } from "jotai";
+import { IconLogout } from "@tabler/icons-react";
 import { api } from "../../lib/api";
 import { fmtCount } from "../../lib/format";
 import { activeProfileAtom } from "../../state/atoms";
@@ -10,6 +11,14 @@ export function StatusLine() {
     queryKey: ["stats"],
     queryFn: api.stats,
     refetchInterval: 5_000,
+  });
+  // Who is signed in, when anyone is. An instance with no identity
+  // provider answers 401 here and the query simply stays empty.
+  const { data: me } = useQuery({
+    queryKey: ["me"],
+    queryFn: api.me,
+    retry: false,
+    staleTime: 60_000,
   });
 
   return (
@@ -44,6 +53,20 @@ export function StatusLine() {
         </>
       )}
       <div className="flex-1" />
+      {me?.authenticated && me.via === "session" && (
+        <span className="flex items-center gap-1.5" title={me.email ?? me.subject}>
+          <span className="text-neon-cyan">{me.name ?? me.email ?? me.subject}</span>
+          <span className="text-default-600">{me.role}</span>
+          <a
+            href="/auth/logout"
+            aria-label="Sign out"
+            title="sign out"
+            className="hover:text-neon-magenta"
+          >
+            <IconLogout size={13} stroke={1.6} />
+          </a>
+        </span>
+      )}
       {active.baseUrl && (
         <span title={active.baseUrl}>
           server <span className="text-neon-cyan">{active.name}</span>

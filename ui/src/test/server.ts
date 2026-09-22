@@ -8,6 +8,14 @@ import {
 } from "./fixtures";
 
 export const handlers = [
+  // A local instance with no identity provider — what the UI sees unless
+  // a test says otherwise.
+  http.get("/auth/info", () =>
+    HttpResponse.json({ mode: "none", static_token_accepted: false }),
+  ),
+  http.get("/auth/me", () =>
+    HttpResponse.json({ authenticated: false }, { status: 401 }),
+  ),
   http.get("/api/services", () => HttpResponse.json(["db", "frontend", "payments"])),
   http.get("/api/operations", () => HttpResponse.json(["GET /checkout", "SELECT orders"])),
   http.get("/api/traces", () => HttpResponse.json(traceSummaryFixtures)),
